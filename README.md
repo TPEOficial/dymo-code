@@ -19,6 +19,8 @@
   <hr />
 </div>
 
+![alt text](./docs/images/image.png)
+
 **Dymo Code** is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
 
 ### Use (for development)
