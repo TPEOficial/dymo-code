@@ -12,11 +12,22 @@ block_cipher = None
 # Get the project root
 project_root = Path(SPECPATH)
 
+# Get certifi certificate path for SSL support
+try:
+    import certifi
+    certifi_path = (certifi.where(), 'certifi')
+except ImportError:
+    certifi_path = None
+
 # Data files to include
 datas = [
     # Include version.json for update checking
     (str(project_root / 'static-api'), 'static-api'),
 ]
+
+# Add certifi certificates if available
+if certifi_path:
+    datas.append(certifi_path)
 
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
@@ -70,6 +81,7 @@ hiddenimports = [
     'src.name_detector',
     'src.interactive_input',
     'src.async_input',
+    'src.context_manager',
     'src.utils',
     'src.utils.basics',
 ]

@@ -128,6 +128,16 @@ class CommandHandler:
             print_enhanced_help()
             return True, None
 
+        elif name == "version":
+            from .main import get_version, _update_available
+            version = get_version()
+            console.print(f"\n[bold {COLORS['primary']}]Dymo Code[/] [bold]v{version}[/]")
+            console.print(f"[{COLORS['muted']}]https://github.com/TPEOficial/dymo-code[/]")
+            if _update_available:
+                console.print(f"[{COLORS['warning']}]Update available: v{_update_available}[/]")
+            console.print()
+            return True, None
+
         elif name == "clear":
             self.agent.clear_history()
             if self.queue_manager: self.queue_manager.clear_queue()

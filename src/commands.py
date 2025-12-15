@@ -49,6 +49,13 @@ COMMANDS: Dict[str, Command] = {
         usage="/help",
         aliases=["h", "?"]
     ),
+    "version": Command(
+        name="version",
+        description="Show current version",
+        category=CommandCategory.GENERAL,
+        usage="/version",
+        aliases=["v"]
+    ),
     "exit": Command(
         name="exit",
         description="Exit the agent",

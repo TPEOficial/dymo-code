@@ -3,8 +3,8 @@ Main entry point for Dymo Code
 Enhanced with memory system, command autocomplete, and multi-agent support
 """
 from typing import Optional
-import os, sys, time, threading, json
-from urllib.request import urlopen
+import os, sys, time, threading, json, ssl
+from urllib.request import urlopen, Request
 from urllib.error import URLError
 from pathlib import Path
 
@@ -45,34 +45,56 @@ from src.ui import (
 VERSION_CHECK_URL = "https://github.com/TPEOficial/dymo-code/raw/refs/heads/main/static-api/version.json"
 _update_available: Optional[str] = None
 
-def _get_local_version() -> Optional[str]:
-    """Get the local version from static-api/version.json"""
+def get_version() -> str:
+    """Get the current version of Dymo Code"""
     try:
         version_file = get_resource_path("static-api/version.json")
         if version_file.exists():
             with open(version_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("version")
+                return data.get("version", "unknown")
     except Exception:
         pass
-    return None
+    return "unknown"
+
+def _create_ssl_context():
+    """Create SSL context that works in compiled mode"""
+    try:
+        # Try to use certifi certificates if available
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    # Fallback: create unverified context (less secure but works)
+    # This is acceptable for a simple version check
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 def _check_for_updates():
     """Check for updates in background and store result"""
     global _update_available
     try:
-        local_version = _get_local_version()
-        if not local_version:
-            return
+        local_version = get_version()
+        if local_version == "unknown": return
 
-        with urlopen(VERSION_CHECK_URL, timeout=5) as response:
+        # Create request with headers (GitHub sometimes blocks bare requests)
+        request = Request(
+            VERSION_CHECK_URL,
+            headers={"User-Agent": "Dymo-Code-Update-Checker"}
+        )
+
+        # Use SSL context that works in compiled mode
+        ssl_context = _create_ssl_context()
+
+        with urlopen(request, timeout=10, context=ssl_context) as response:
             data = json.loads(response.read().decode("utf-8"))
             remote_version = data.get("version")
 
-            if remote_version and remote_version != local_version:
-                _update_available = remote_version
-    except (URLError, json.JSONDecodeError, Exception):
-        pass
+            if remote_version and remote_version != local_version: _update_available = remote_version
+    except Exception: pass
 
 def start_version_check():
     """Start version check in background thread"""
@@ -82,13 +104,13 @@ def start_version_check():
 def show_update_notification():
     """Show update notification if available"""
     if _update_available:
-        local_version = _get_local_version() or "unknown"
+        local_version = get_version()
         console.print(
-            f"[{COLORS['warning']}]⬆ Update available: v{_update_available} "
+            f"[{COLORS['warning']}]Update available: v{_update_available} "
             f"(current: v{local_version})[/]"
         )
         console.print(
-            f"[{COLORS['muted']}]  Run: git pull origin main[/]"
+            f"[{COLORS['muted']}]  Download: https://github.com/TPEOficial/dymo-code/releases[/]"
         )
         console.print()
 

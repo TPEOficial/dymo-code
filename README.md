@@ -54,7 +54,7 @@ Then, replace the `.env.example` file to `.env` and fill in the tokens you need.
 ```bash
 # For production (not available yet).
 $ dymo-code
-# For development (replace snatch with python run.py).
+# For development (replace dymo-code with python run.py).
 $ python run.py
 ```
 
