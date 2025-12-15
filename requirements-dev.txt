@@ -1,0 +1,10 @@
+# Development and build dependencies
+-r requirements.txt
+
+# Build tools
+pyinstaller>=6.0.0
+
+# Optional: for code quality
+# ruff>=0.1.0
+# black>=23.0.0
+# mypy>=1.0.0

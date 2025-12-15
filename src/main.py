@@ -24,7 +24,7 @@ from src.memory import memory
 from src.command_handler import CommandHandler
 from src.terminal_ui import terminal_ui as async_input
 from src.storage import user_config, get_data_directory
-from src.utils.basics import set_terminal_title
+from src.utils.basics import set_terminal_title, get_resource_path
 from src.ui import (
     console,
     print_banner,
@@ -48,9 +48,7 @@ _update_available: Optional[str] = None
 def _get_local_version() -> Optional[str]:
     """Get the local version from static-api/version.json"""
     try:
-        # Get the project root (parent of src/)
-        project_root = Path(__file__).parent.parent
-        version_file = project_root / "static-api" / "version.json"
+        version_file = get_resource_path("static-api/version.json")
         if version_file.exists():
             with open(version_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
