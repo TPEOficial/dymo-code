@@ -1,0 +1,17 @@
+cff-version: 1.0.0
+title: Dymo Code
+message: "\U0001F4E5 AI OSINT - Capture, download, and enjoy."
+type: software
+authors:
+  - given-names: FJRG2007
+    email: fjrg2007@tpeoficial.com
+repository-code: 'https://github.com/TPEOficial/dymo-code'
+url: 'https://dymo.tpeoficial.com/'
+abstract: >-
+  Dymo Code is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
+keywords:
+  - claude code
+  - artificial intelligence
+  - ai agent
+license: AGPL-3.0-or-later
+version: Coming Soon

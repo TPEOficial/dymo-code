@@ -19,13 +19,7 @@
   <hr />
 </div>
 
-**Snatch** is a versatile tool crafted for cybersecurity and hacking enthusiasts. Developed in Python and currently in active development, **Snatch** aims to serve as a powerful multipurpose tool for OSINT (Open Source Intelligence) tasks, leveraging Artificial Intelligence to enhance task efficiency and speed.
-
-Imagine simply inputting a prompt that details all relevant information about your target. **Snatch** then autonomously generates potential password lists, identifies possible emails and social networks, and more.
-
-Alternatively, you can directly execute commands via your terminal to utilize **Snatch**.
-
-It's important to emphasize that **Snatch** is a work in progress, and all operations are conducted locally. Users should exercise caution as they assume full responsibility for their actions.
+**Dymo Code** is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
 
 > [!NOTE]\
 > All documentation will be migrated to [Dymo Docs](https://tpe.li/D-SNATCH).
@@ -38,9 +32,11 @@ It's important to emphasize that **Snatch** is a work in progress, and all opera
 
 First clone the repository:
 ```bash
-$ git clone https://github.com/FJRG2007/snatch.git
-$ cd snatch
+$ git clone https://github.com/TPEOficial/dymo-code.git
+$ cd dymo-code
 ```
+
+We recommend using it in venv, but it is optional.
 
 Now install the requirements:
 ```bash
@@ -50,12 +46,12 @@ $ pip install -r requirements.txt
 Then, replace the `.env.example` file to `.env` and fill in the tokens you need.
 ```bash
 # For production (not available yet).
-$ snatch help
-# For development (replace snatch with python cli.py).
-$ python cli.py help
+$ dymo-code help
+# For development (replace snatch with python run.py).
+$ python run.py
 ```
 
-### Main Features (Modules)
+### Main Features
 
 | Name                              | Status              | Active |
 |-----------------------------------|---------------------|--------|
@@ -83,30 +79,23 @@ $ python cli.py help
 
 | Provider                       | Models (Assorted)                             | Execution   | Rating  |
 |--------------------------------|-----------------------------------------------|-------------|---------|
-| Anthropic                      | Claude                                        | API         | None    |
-| TPEOficial                     | Dymo AGI, ELA                                 | API         | None    |
-| Google                         | Gemini                                        | API         | None    |
-| Groq                           | Llama3, Gemma, Whisper                        | API         | None    |
-| Meta                           | Llama3                                        | API         | None    |
-| Ollama                         | Llama3, Gemma                                 | Local       | None    |
-| OpenAI                         | GPT-4o, GPT-4, GPT-3.5 Turbo, GPT-3.5         | API         | None    |
-| Perplexity                     | Llama3, Mixtral                               | API         | None    |
-
-Requirements available at [`REQUIREMENTS`](./docs/REQUIREMENTS.md).
+| Anthropic (Recommended)        | To be specified shortly                       | API         | None    |
+| TPEOficial                     | To be specified shortly                       | API         | None    |
+| Google (Coming Soon)           | To be specified shortly                       | API         | None    |
+| Groq (Recommended | Default)   | To be specified shortly                       | API         | None    |
+| Meta (Coming Soon)             | To be specified shortly                       | API         | None    |
+| Ollama                         | To be specified shortly                       | Local       | None    |
+| OpenAI                         | To be specified shortly                       | API         | None    |
+| OpenRouter                     | To be specified shortly                       | API         | None    |
+| Perplexity (Coming Soon)       | To be specified shortly                       | API         | None    |
 
 #### Author
  - FJRG007
  - Email: [fjrg2007@tpeoficial.com](mailto:fjrg2007@tpeoficial.com)
 
-#### Contributors
-To contribute to the project visit the requirements at [`CONTRIBUTING`](./docs/dev/CONTRIBUTING.md).
-
-![Alt](https://repobeats.axiom.co/api/embed/752f1062974e1799dfb603d420343078a9e4a378.svg "Snatch analytics image")
-
-**Note**: If you are a contributor and do not appear here, wait a little while until the image is reloaded.
 
 #### License
-The founder of the project, [FJRG2007](https://github.com/FJRG2007/) & [TPEOficial](https://github.com/TPEOficial/), reserves the right to modify the license at any time.
+The founder of the project, [TPEOficial](https://github.com/TPEOficial/), reserves the right to modify the license at any time.
 This project is licensed under the terms of the [GNU Affero General Public License](./LICENSE).
 
 <p align="right"><a href="#top">Back to top 🔼</a></p>
