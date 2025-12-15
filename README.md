@@ -60,7 +60,7 @@ $ python run.py
 | Anthropic (Recommended)        | To be specified shortly                       | API         | None    |
 | TPEOficial                     | To be specified shortly                       | API         | None    |
 | Google (Coming Soon)           | To be specified shortly                       | API         | None    |
-| Groq (Recommended | Default)   | To be specified shortly                       | API         | None    |
+| Groq (Recommended \| Default)   | To be specified shortly                       | API         | None    |
 | Meta (Coming Soon)             | To be specified shortly                       | API         | None    |
 | Ollama                         | To be specified shortly                       | Local       | None    |
 | OpenAI                         | To be specified shortly                       | API         | None    |
