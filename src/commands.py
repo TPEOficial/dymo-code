@@ -248,6 +248,12 @@ COMMANDS: Dict[str, Command] = {
         category=CommandCategory.SYSTEM,
         usage="/debug"
     ),
+    "context": Command(
+        name="context",
+        description="View context/token usage",
+        category=CommandCategory.SYSTEM,
+        usage="/context"
+    ),
 }
 
 

@@ -473,6 +473,35 @@ class CommandHandler:
             display_info("Debug mode toggled")
             return True, None
 
+        elif name == "context":
+            from .context_manager import context_manager
+            state = context_manager.get_state(self.agent.messages, self.agent.model_key)
+
+            console.print(f"\n[bold {COLORS['secondary']}]Context Status[/]\n")
+
+            # Progress bar visual
+            bar_width = 40
+            filled = int(bar_width * state.usage_percent)
+            bar = "█" * filled + "░" * (bar_width - filled)
+
+            # Color based on usage
+            if state.usage_percent >= 0.8:
+                bar_color = COLORS['error']
+            elif state.usage_percent >= 0.6:
+                bar_color = COLORS['warning']
+            else:
+                bar_color = COLORS['success']
+
+            console.print(f"  [{bar_color}]{bar}[/] {state.usage_percent:.1%}")
+            console.print(f"\n  [bold]Tokens:[/] ~{state.total_tokens:,} / {state.max_tokens:,}")
+            console.print(f"  [bold]Messages:[/] {state.message_count}")
+            console.print(f"  [bold]Summary active:[/] {'Yes' if state.summary_active else 'No'}")
+
+            if state.needs_compression:
+                console.print(f"\n  [{COLORS['warning']}]Context will be compressed on next message[/]")
+            console.print()
+            return True, None
+
         # Unknown command
         display_error(f"Unknown command: /{command.name}")
         return True, None

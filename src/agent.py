@@ -19,6 +19,7 @@ from .ui import console, display_tool_call, display_tool_result, display_execute
 from .logger import log_error, log_api_error, log_tool_error, log_debug
 from .history import history_manager
 from .name_detector import detect_and_save_name
+from .context_manager import context_manager
 
 # Type for status callback
 StatusCallback = Optional[Callable[[str, str], None]]
@@ -79,6 +80,7 @@ class Agent:
         """Clear conversation history and start new conversation"""
         self._init_system_prompt()
         history_manager.start_new_conversation()
+        context_manager.reset()
         log_debug("Conversation cleared, new conversation started")
 
     def load_conversation(self, conversation_id: str) -> bool:
@@ -325,6 +327,16 @@ class Agent:
             log_error("Client initialization error", e)
             console.print(Panel(error_msg, border_style=f"{COLORS['error']}", box=ROUNDED))
             return error_msg
+
+        # Compress context if needed (prevents token limit errors)
+        if context_manager.should_compress(self.messages, self.model_key):
+            state = context_manager.get_state(self.messages, self.model_key)
+            display_info(f"Compressing conversation context ({state.usage_percent:.0%} used)...")
+            self.messages = context_manager.compress_context(
+                self.messages,
+                self.model_key,
+                self.client_manager
+            )
 
         response_text = ""
         pending_tool_calls = []
