@@ -6,15 +6,15 @@
   <a href="https://ko-fi.com/fjrg2007"> <img alt="Kofi" src="https://img.shields.io/badge/Ko--fi-purple?style=for-the-badge&logo=ko-fi&logoColor=white"></a>
   <br />
   <br />
-  <a href="https://github.com/FJRG2007/snatch/blob/main/docs/getting-started/quickstart.md">Quickstart</a>
+  <a href="#">Quickstart</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://tpe.li/dsc">Discord</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://github.com/FJRG2007/snatch/blob/main/docs/community/features.md">All Features</a>
+  <a href="#main-features">All Features</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://github.com/FJRG2007/snatch/blob/main/docs/REQUIREMENTS.md">Requirements</a>
+  <a href="#">Requirements</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://github.com/FJRG2007/snatch/blob/main/docs/community/FAQ.md">FAQ</a>
+  <a href="#">FAQ</a>
   <br />
   <hr />
 </div>
