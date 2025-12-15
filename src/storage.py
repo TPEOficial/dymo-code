@@ -101,7 +101,9 @@ class UserConfig:
     def __init__(self):
         self._config_dir = get_config_directory()
         self._config_file = self._config_dir / "user_config.json"
+        self._api_keys_file = self._config_dir / "api_keys.json"
         self._config = self._load_config()
+        self._api_keys = self._load_api_keys()
 
     def _load_config(self) -> dict:
         """Load configuration from file"""
@@ -131,6 +133,23 @@ class UserConfig:
         ensure_directories()
         with open(self._config_file, "w", encoding="utf-8") as f:
             json.dump(self._config, f, indent=2, ensure_ascii=False)
+
+    def _load_api_keys(self) -> dict:
+        """Load API keys from file"""
+        ensure_directories()
+        if self._api_keys_file.exists():
+            try:
+                with open(self._api_keys_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                return {}
+        return {}
+
+    def _save_api_keys(self):
+        """Save API keys to file"""
+        ensure_directories()
+        with open(self._api_keys_file, "w", encoding="utf-8") as f:
+            json.dump(self._api_keys, f, indent=2, ensure_ascii=False)
 
     @property
     def is_first_run(self) -> bool:
@@ -180,6 +199,54 @@ class UserConfig:
     def config_directory(self) -> Path:
         """Get the config directory path"""
         return get_config_directory()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API Keys Management
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def set_api_key(self, provider: str, api_key: str):
+        """
+        Set an API key for a provider.
+        Provider should be: groq, openrouter, anthropic, openai
+        """
+        key_name = f"{provider.upper()}_API_KEY"
+        self._api_keys[key_name] = api_key
+        self._save_api_keys()
+
+    def get_api_key(self, provider: str) -> Optional[str]:
+        """Get an API key for a provider"""
+        key_name = f"{provider.upper()}_API_KEY"
+        return self._api_keys.get(key_name)
+
+    def delete_api_key(self, provider: str):
+        """Delete an API key for a provider"""
+        key_name = f"{provider.upper()}_API_KEY"
+        if key_name in self._api_keys:
+            del self._api_keys[key_name]
+            self._save_api_keys()
+
+    def get_all_api_keys(self) -> dict:
+        """Get all configured API keys (masked)"""
+        masked = {}
+        for key, value in self._api_keys.items():
+            if value:
+                # Show only first 4 and last 4 characters
+                if len(value) > 12:
+                    masked[key] = f"{value[:4]}...{value[-4:]}"
+                else:
+                    masked[key] = "****"
+        return masked
+
+    def get_raw_api_key(self, key_name: str) -> Optional[str]:
+        """Get raw API key by exact key name (e.g., GROQ_API_KEY)"""
+        return self._api_keys.get(key_name)
+
+    def load_api_keys_to_env(self):
+        """Load all stored API keys into environment variables"""
+        import os
+        for key, value in self._api_keys.items():
+            if value and key not in os.environ:
+                os.environ[key] = value
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

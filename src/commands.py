@@ -183,6 +183,28 @@ COMMANDS: Dict[str, Command] = {
         has_args=True,
         arg_hint="command"
     ),
+    "setapikey": Command(
+        name="setapikey",
+        description="Set API key for a provider",
+        category=CommandCategory.PROVIDERS,
+        usage="/setapikey <provider> <key>",
+        has_args=True,
+        arg_hint="provider key"
+    ),
+    "apikeys": Command(
+        name="apikeys",
+        description="View configured API keys",
+        category=CommandCategory.PROVIDERS,
+        usage="/apikeys"
+    ),
+    "delapikey": Command(
+        name="delapikey",
+        description="Delete an API key",
+        category=CommandCategory.PROVIDERS,
+        usage="/delapikey <provider>",
+        has_args=True,
+        arg_hint="provider"
+    ),
 
     # History Commands
     "resume": Command(

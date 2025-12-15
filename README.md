@@ -59,14 +59,14 @@ $ python run.py
 
 | Provider                       | Models (Assorted)                             | Execution   | Rating  |
 |--------------------------------|-----------------------------------------------|-------------|---------|
-| Anthropic (Recommended)        | To be specified shortly                       | API         | None    |
-| TPEOficial                     | To be specified shortly                       | API         | None    |
+| Anthropic (Coming Soon)        | To be specified shortly                       | API         | None    |
+| TPEOficial (Coming Soon)       | To be specified shortly                       | API         | None    |
 | Google (Coming Soon)           | To be specified shortly                       | API         | None    |
-| Groq (Recommended \| Default)   | To be specified shortly                       | API         | None    |
+| Groq (Recommended \| Default)  | To be specified shortly                       | API         | None    |
 | Meta (Coming Soon)             | To be specified shortly                       | API         | None    |
-| Ollama                         | To be specified shortly                       | Local       | None    |
-| OpenAI                         | To be specified shortly                       | API         | None    |
-| OpenRouter                     | To be specified shortly                       | API         | None    |
+| Ollama (Coming Soon)           | To be specified shortly                       | Local       | None    |
+| OpenAI (Coming Soon)           | To be specified shortly                       | API         | None    |
+| OpenRouter (Coming Soon)       | To be specified shortly                       | API         | None    |
 | Perplexity (Coming Soon)       | To be specified shortly                       | API         | None    |
 
 #### Author

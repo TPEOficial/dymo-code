@@ -353,6 +353,68 @@ class CommandHandler:
             return True, None
 
         # ═══════════════════════════════════════════════════════════════════════
+        # API Keys Commands
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "setapikey":
+            if not args:
+                display_error("Usage: /setapikey <provider> <key>")
+                console.print(f"[{COLORS['muted']}]Providers: groq, openrouter, anthropic, openai[/]")
+                return True, None
+
+            parts = args.split(maxsplit=1)
+            if len(parts) < 2:
+                display_error("Usage: /setapikey <provider> <key>")
+                return True, None
+
+            provider = parts[0].lower()
+            api_key = parts[1].strip()
+
+            valid_providers = ["groq", "openrouter", "anthropic", "openai"]
+            if provider not in valid_providers:
+                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+                return True, None
+
+            user_config.set_api_key(provider, api_key)
+            # Also set in current environment so it takes effect immediately
+            import os
+            os.environ[f"{provider.upper()}_API_KEY"] = api_key
+            display_success(f"API key for {provider.upper()} saved successfully")
+            return True, None
+
+        elif name == "apikeys":
+            keys = user_config.get_all_api_keys()
+            if not keys:
+                display_info("No API keys configured. Use /setapikey <provider> <key>")
+            else:
+                console.print(f"\n[bold {COLORS['secondary']}]Configured API Keys[/]\n")
+                for key_name, masked_value in keys.items():
+                    provider = key_name.replace("_API_KEY", "")
+                    console.print(f"  [{COLORS['accent']}]{provider}[/]: {masked_value}")
+                console.print()
+            return True, None
+
+        elif name == "delapikey":
+            if not args:
+                display_error("Usage: /delapikey <provider>")
+                return True, None
+
+            provider = args.strip().lower()
+            valid_providers = ["groq", "openrouter", "anthropic", "openai"]
+            if provider not in valid_providers:
+                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+                return True, None
+
+            user_config.delete_api_key(provider)
+            # Also remove from current environment
+            import os
+            key_name = f"{provider.upper()}_API_KEY"
+            if key_name in os.environ:
+                del os.environ[key_name]
+            display_success(f"API key for {provider.upper()} deleted")
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
         # History Commands
         # ═══════════════════════════════════════════════════════════════════════
 

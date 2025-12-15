@@ -80,13 +80,23 @@ class GroqClient(BaseAIClient):
     """Groq API client"""
 
     def __init__(self):
-        self.api_key = os.environ.get("GROQ_API_KEY")
         self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from environment (dynamic)"""
+        return os.environ.get("GROQ_API_KEY")
 
     def _get_client(self):
-        if self._client is None and self.api_key:
+        current_key = self.api_key
+        # Recreate client if key changed
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
             from groq import Groq
-            self._client = Groq(api_key=self.api_key)
+            self._client = Groq(api_key=current_key)
         return self._client
 
     def is_available(self) -> bool:
@@ -108,7 +118,7 @@ class GroqClient(BaseAIClient):
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
-            raise RuntimeError("GROQ_API_KEY not set. Please add it to your .env file.")
+            raise RuntimeError("GROQ_API_KEY not set. Use /setapikey groq <your-key>")
 
         # For Compound models, use non-streaming as they handle tools automatically
         if self._is_compound_model(model):
@@ -479,14 +489,24 @@ class OpenRouterClient(BaseAIClient):
     """OpenRouter API client (OpenAI-compatible)"""
 
     def __init__(self):
-        self.api_key = os.environ.get("OPENROUTER_API_KEY")
         self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from environment (dynamic)"""
+        return os.environ.get("OPENROUTER_API_KEY")
 
     def _get_client(self):
-        if self._client is None and self.api_key:
+        current_key = self.api_key
+        # Recreate client if key changed
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
             from openai import OpenAI
             self._client = OpenAI(
-                api_key=self.api_key,
+                api_key=current_key,
                 base_url="https://openrouter.ai/api/v1"
             )
         return self._client
@@ -502,7 +522,7 @@ class OpenRouterClient(BaseAIClient):
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
-            raise RuntimeError("OPENROUTER_API_KEY not set. Please add it to your .env file.")
+            raise RuntimeError("OPENROUTER_API_KEY not set. Use /setapikey openrouter <your-key>")
 
         kwargs = {
             "messages": messages,
@@ -600,14 +620,24 @@ class AnthropicClient(BaseAIClient):
     """Anthropic Claude API client"""
 
     def __init__(self):
-        self.api_key = os.environ.get("ANTHROPIC_API_KEY")
         self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from environment (dynamic)"""
+        return os.environ.get("ANTHROPIC_API_KEY")
 
     def _get_client(self):
-        if self._client is None and self.api_key:
+        current_key = self.api_key
+        # Recreate client if key changed
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
             try:
                 from anthropic import Anthropic
-                self._client = Anthropic(api_key=self.api_key)
+                self._client = Anthropic(api_key=current_key)
             except ImportError:
                 raise RuntimeError("anthropic package not installed. Run: pip install anthropic")
         return self._client
@@ -678,7 +708,7 @@ class AnthropicClient(BaseAIClient):
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
-            raise RuntimeError("ANTHROPIC_API_KEY not set. Please add it to your .env file.")
+            raise RuntimeError("ANTHROPIC_API_KEY not set. Use /setapikey anthropic <your-key>")
 
         system_prompt, converted_messages = self._convert_messages_for_anthropic(messages)
 
@@ -758,13 +788,23 @@ class OpenAIClient(BaseAIClient):
     """OpenAI API client"""
 
     def __init__(self):
-        self.api_key = os.environ.get("OPENAI_API_KEY")
         self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from environment (dynamic)"""
+        return os.environ.get("OPENAI_API_KEY")
 
     def _get_client(self):
-        if self._client is None and self.api_key:
+        current_key = self.api_key
+        # Recreate client if key changed
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
             from openai import OpenAI
-            self._client = OpenAI(api_key=self.api_key)
+            self._client = OpenAI(api_key=current_key)
         return self._client
 
     def is_available(self) -> bool:
@@ -778,7 +818,7 @@ class OpenAIClient(BaseAIClient):
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
-            raise RuntimeError("OPENAI_API_KEY not set. Please add it to your .env file.")
+            raise RuntimeError("OPENAI_API_KEY not set. Use /setapikey openai <your-key>")
 
         # Check if model supports tools (o1 models don't)
         model_config = None
@@ -858,8 +898,12 @@ class OllamaClient(BaseAIClient):
     """Ollama API client for local LLM inference"""
 
     def __init__(self):
-        self.base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         self._http_client = None
+
+    @property
+    def base_url(self) -> str:
+        """Get base URL from environment (dynamic)"""
+        return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
     def _get_client(self):
         if self._http_client is None:
@@ -1030,9 +1074,9 @@ class ClientManager:
         client = self._clients[config.provider]
 
         if not client.is_available():
-            provider_name = config.provider.value.upper()
+            provider_name = config.provider.value.lower()
             raise RuntimeError(
-                f"{provider_name}_API_KEY not set. Please add it to your .env file."
+                f"{provider_name.upper()}_API_KEY not set. Use /setapikey {provider_name} <your-key>"
             )
 
         return client

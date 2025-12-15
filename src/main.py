@@ -227,6 +227,9 @@ def main():
     # Start version check in background (non-blocking)
     start_version_check()
 
+    # Load stored API keys into environment
+    user_config.load_api_keys_to_env()
+
     # Check for first run and do setup if needed
     if user_config.is_first_run:
         username = run_first_time_setup()

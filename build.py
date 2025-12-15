@@ -99,8 +99,7 @@ def build():
         renamed = dist_dir / output_name
 
     if original.exists():
-        if renamed.exists():
-            renamed.unlink()
+        if renamed.exists(): renamed.unlink()
         original.rename(renamed)
         print(f"\n{'='*60}")
         print(f"Build successful!")
