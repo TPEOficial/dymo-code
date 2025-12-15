@@ -48,25 +48,10 @@ $ python run.py
 
 | Name                              | Status              | Active |
 |-----------------------------------|---------------------|--------|
-| AI Prompt                         | In development      |   ⚠️   |
-| OSINT Automation	                | Coming Soon	        |   ❌   |
-| Vulnerability Scanning Algorithm  | Coming Soon         |   ❌   |
-| Data Search & Completion Tool     | In BETA Phase       |   ⚠️   |
-| Ports Scanner                     | Active              |   ✅   |
-| Website/video/data Downloader     | Active              |   ✅   |
-| Directory & Subdomain Listing     | Active              |   ✅   |
-| Password List Generation          | Active              |   ✅   |
-| WhatsApp Basic OSINT              | Active              |   ✅   |
-| Wifi Scanner                      | Relatively Soon     |   ❌   |
-| Image Analysis	                  | In development	    |   ⚠️   |
-| Dark Web Monitoring	              | Coming Soon	        |   ❌   |
-| Metadata Extractor	              | In development	    |   ⚠️   |
-| Personal Data Scraper             | In development      |   ⚠️   |
-
-[All Features](https://docs.tpeoficial.com/docs/snatch/getting-started/modules)
-
-> [!IMPORTANT]\
-> Due to the sensitive nature of OSINT tools, full versions of some tools will not be provided. For example, the WhatsApp LOGS tool is only available in a basic version.
+| AI Chat                           | In development      |   ✅   |
+| Multi-Agent	                      | In development	    |   ⚠️   |
+| Support for multiple AI providers | In development      |   ⚠️   |
+| MCP Support                       | In BETA Phase       |   ⚠️   |
 
 ### Supported AI Models
 
