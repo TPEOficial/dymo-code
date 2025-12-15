@@ -6,5 +6,4 @@ Run this file to start the agent.
 
 from src.main import main
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

@@ -3,8 +3,6 @@ Interactive Command System for Dymo Code
 Provides slash commands with real-time autocomplete and visual feedback
 """
 
-import os
-import sys
 from dataclasses import dataclass
 from typing import List, Optional, Callable, Dict, Any
 from enum import Enum

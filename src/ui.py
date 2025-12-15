@@ -97,15 +97,13 @@ def print_models(current_model: str, provider_availability: Dict[str, Any] = Non
     # Group models by provider
     models_by_provider: Dict[ModelProvider, List] = {}
     for key, config in AVAILABLE_MODELS.items():
-        if config.provider not in models_by_provider:
-            models_by_provider[config.provider] = []
+        if config.provider not in models_by_provider: models_by_provider[config.provider] = []
         models_by_provider[config.provider].append((key, config))
 
     console.print()
 
     for provider in ModelProvider:
-        if provider not in models_by_provider:
-            continue
+        if provider not in models_by_provider: continue
 
         models = models_by_provider[provider]
         provider_config = PROVIDER_CONFIGS.get(provider)
@@ -133,12 +131,9 @@ def print_models(current_model: str, provider_availability: Dict[str, Any] = Non
         for key, config in models:
             status = "[green]● Active[/green]" if key == current_model else ""
             features = ""
-            if config.supports_code_execution:
-                features += "🐍"
-            if config.supports_web_search:
-                features += "🔍"
-            if not config.supports_tools:
-                features += "⚠️"
+            if config.supports_code_execution: features += "🐍"
+            if config.supports_web_search: features += "🔍"
+            if not config.supports_tools: features += "⚠️"
 
             table.add_row(key, config.name, config.description[:40], status)
 
@@ -173,8 +168,7 @@ def display_tool_call(name: str, args: dict, verbose: bool = True):
     import json
 
     # Skip display for folder creation (it's usually just a preparatory step)
-    if name == "create_folder" and not verbose:
-        return
+    if name == "create_folder" and not verbose: return
 
     tool_text = Text()
     tool_text.append("⚡ ", style=f"{COLORS['warning']}")
@@ -230,10 +224,8 @@ def display_tool_result(result: str, tool_name: str = None):
     clear_last_file_change()
 
     # Default display for other results
-    if len(result) > 500:
-        display_result = result[:500] + "\n... (truncated)"
-    else:
-        display_result = result
+    if len(result) > 500: display_result = result[:500] + "\n... (truncated)"
+    else: display_result = result
 
     console.print(
         Panel(
@@ -279,16 +271,13 @@ def display_executed_tool(tool_type: str, arguments: str, output: str):
                 Syntax(args_str, "json", theme="monokai", line_numbers=False),
                 style="dim"
             )
-        except:
-            console.print(f"  [dim]{arguments}[/dim]")
+        except: console.print(f"  [dim]{arguments}[/dim]")
 
     # Show output
     if output:
         # Truncate if too long
-        if len(output) > 1000:
-            display_output = output[:1000] + "\n... (truncated)"
-        else:
-            display_output = output
+        if len(output) > 1000: display_output = output[:1000] + "\n... (truncated)"
+        else: display_output = output
 
         console.print(
             Panel(

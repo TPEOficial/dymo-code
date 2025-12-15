@@ -2,16 +2,11 @@
 Main entry point for Dymo Code
 Enhanced with memory system, command autocomplete, and multi-agent support
 """
-
-import os
-import sys
-import threading
-import time
 from typing import Optional
+import os, sys, time, threading
 
 # Add parent directory to path for imports when running directly
-if __name__ == "__main__":
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if __name__ == "__main__": sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 
@@ -104,13 +99,8 @@ def handle_command(user_input: str, agent: Agent, queue_manager: MessageQueueMan
     Returns None to signal exit.
     """
     is_command, result = command_handler.handle(user_input)
-
-    if not is_command:
-        return False
-
-    if result == "exit":
-        return None
-
+    if not is_command: return False
+    if result == "exit": return None
     return True
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -145,10 +135,8 @@ def run_first_time_setup() -> str:
 
     try:
         name = input().strip()
-        if not name:
-            name = "User"
-    except (EOFError, KeyboardInterrupt):
-        name = "User"
+        if not name: name = "User"
+    except (EOFError, KeyboardInterrupt): name = "User"
 
     # Save the configuration
     user_config.complete_first_run(name)
@@ -204,15 +192,9 @@ def main():
     # Welcome message - different for returning users
     if not user_config.is_first_run:
         console.print()
-        console.print(
-            f"[bold {COLORS['secondary']}]Welcome back, {username}![/]"
-        )
-    console.print(
-        f"[{COLORS['muted']}]Type [bold]/[/bold] to see commands or start chatting.[/]"
-    )
-    console.print(
-        f"[{COLORS['muted']}]You can type while the agent processes - messages will be queued.[/]"
-    )
+        console.print(f"[bold {COLORS['secondary']}]Welcome back, {username}![/]")
+    console.print(f"[{COLORS['muted']}]Type [bold]/[/bold] to see commands or start chatting.[/]")
+    console.print(f"[{COLORS['muted']}]You can type while the agent processes - messages will be queued.[/]")
     console.print()
     show_status(agent.model_key)
     console.print()
@@ -223,9 +205,7 @@ def main():
             if async_input.has_queued_messages():
                 queued_content = async_input.get_next_queued()
                 if queued_content:
-                    console.print(
-                        f"\n[{COLORS['muted']}]Processing queued message...[/]"
-                    )
+                    console.print(f"\n[{COLORS['muted']}]Processing queued message...[/]")
                     user_input = queued_content
                     # Show the queued input
                     async_input.print_submitted_input(user_input)
@@ -240,8 +220,7 @@ def main():
                 # Get input from user using async input handler
                 user_input = async_input.get_input()
 
-            if not user_input:
-                continue
+            if not user_input: continue
 
             # Show the user's input so it stays visible in chat history
             async_input.print_submitted_input(user_input)
@@ -249,12 +228,8 @@ def main():
             # Handle commands
             command_result = handle_command(user_input, agent, queue_manager, command_handler)
 
-            if command_result is None:
-                # Exit signal
-                break
-            elif command_result:
-                # Was a command, continue to next iteration
-                continue
+            if command_result is None: break
+            elif command_result: continue
 
             # Regular chat - show processing and set state
             queue_manager.set_processing(True)
@@ -269,8 +244,7 @@ def main():
             # Start spinner with initial status
             async_input.start_processing("thinking")
 
-            try:
-                agent.chat(user_input)
+            try: agent.chat(user_input)
             finally:
                 async_input.stop_processing()
                 queue_manager.set_processing(False)
@@ -281,30 +255,21 @@ def main():
             # Check if there are more messages in the queue
             total_queued = queue_manager.get_queue_size() + async_input.get_queue_size()
             if total_queued > 0:
-                console.print(
-                    f"[{COLORS['muted']}]({total_queued} message{'s' if total_queued > 1 else ''} in queue)[/]\n"
-                )
+                console.print(f"[{COLORS['muted']}]({total_queued} message{'s' if total_queued > 1 else ''} in queue)[/]\n")
 
         except KeyboardInterrupt:
             # If interrupted while processing, show queue option
             if queue_manager.is_agent_processing():
-                console.print(
-                    f"\n\n[{COLORS['warning']}]Processing interrupted.[/]"
-                )
+                console.print(f"\n\n[{COLORS['warning']}]Processing interrupted.[/]")
                 queue_manager.set_processing(False)
                 async_input.set_processing(False)
-            else:
-                console.print(
-                    f"\n\n[{COLORS['muted']}]Interrupted. Type /exit to quit.[/]\n"
-                )
+            else: console.print(f"\n\n[{COLORS['muted']}]Interrupted. Type /exit to quit.[/]\n")
             continue
-        except EOFError:
-            break
+        except EOFError: break
 
     # Cleanup
     async_input.stop()
     memory.close()
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

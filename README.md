@@ -39,7 +39,7 @@ $ pip install -r requirements.txt
 Then, replace the `.env.example` file to `.env` and fill in the tokens you need.
 ```bash
 # For production (not available yet).
-$ dymo-code help
+$ dymo-code
 # For development (replace snatch with python run.py).
 $ python run.py
 ```

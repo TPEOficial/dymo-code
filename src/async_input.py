@@ -93,12 +93,8 @@ class NonBlockingInput:
             was_processing = self.is_processing
             self.is_processing = value
 
-            if value and not was_processing:
-                # Just started processing - show queuing indicator if user types
-                pass
-            elif not value and was_processing:
-                # Finished processing - show prompt for next input
-                pass
+            if value and not was_processing: pass
+            elif not value and was_processing: pass
 
     def is_agent_processing(self) -> bool:
         """Check if agent is processing"""
@@ -169,10 +165,8 @@ class NonBlockingInput:
 
     def _input_loop(self):
         """Background thread that reads input character by character"""
-        if sys.platform == "win32":
-            self._windows_input_loop()
-        else:
-            self._unix_input_loop()
+        if sys.platform == "win32": self._windows_input_loop()
+        else: self._unix_input_loop()
 
     def _windows_input_loop(self):
         """Windows-specific input loop using msvcrt"""
@@ -189,12 +183,8 @@ class NonBlockingInput:
                         buffer = ""
 
                         if result:
-                            if self.is_agent_processing():
-                                # Queue the message
-                                self.add_to_queue(result)
-                            else:
-                                # Submit directly
-                                self.input_queue.put(result)
+                            if self.is_agent_processing(): self.add_to_queue(result)
+                            else: self.input_queue.put(result)
                         continue
 
                     # Escape - clear buffer
@@ -245,9 +235,7 @@ class NonBlockingInput:
                         sys.stdout.write(char)
                         sys.stdout.flush()
 
-                else:
-                    # Small sleep to prevent CPU spinning
-                    time.sleep(0.01)
+                else: time.sleep(0.01)
 
             except Exception:
                 time.sleep(0.01)
@@ -297,8 +285,7 @@ class NonBlockingInput:
                         sys.stdout.flush()
 
         finally:
-            if old_settings:
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            if old_settings: termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
     def _show_prompt(self):
         """Show the input prompt"""
@@ -609,8 +596,7 @@ class ThreadedInputHandler:
                         sys.stdout.flush()
 
         finally:
-            if old_settings:
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            if old_settings: termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
     def get_input(self) -> str:
         """Get input - waits for user to press Enter"""
@@ -630,11 +616,9 @@ class ThreadedInputHandler:
                     result = self.pending_input
                     self.pending_input = None
                 self.input_ready.clear()
-                if result:
-                    return result
+                if result: return result
 
-            if self.stop_event.is_set():
-                return "/exit"
+            if self.stop_event.is_set(): return "/exit"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -91,8 +91,7 @@ class MCPServerConnection:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=5)
-            except Exception:
-                self.process.kill()
+            except Exception: self.process.kill()
             self.process = None
 
     def _read_output(self):
@@ -104,10 +103,8 @@ class MCPServerConnection:
                     try:
                         response = json.loads(line)
                         self._read_queue.put(response)
-                    except json.JSONDecodeError:
-                        pass
-            except Exception:
-                break
+                    except json.JSONDecodeError: pass
+            except Exception: break
 
     def _send_request(self, method: str, params: Dict[str, Any] = None) -> Optional[Dict]:
         """Send a JSON-RPC request to the server"""
@@ -120,8 +117,7 @@ class MCPServerConnection:
             "id": self._request_id,
             "method": method
         }
-        if params:
-            request["params"] = params
+        if params: request["params"] = params
 
         try:
             self.process.stdin.write(json.dumps(request) + "\n")
@@ -131,8 +127,7 @@ class MCPServerConnection:
             try:
                 response = self._read_queue.get(timeout=30)
                 return response
-            except queue.Empty:
-                return None
+            except queue.Empty: return None
 
         except Exception as e:
             log_error(f"MCP request failed: {method}", e)
@@ -182,12 +177,10 @@ class MCPServerConnection:
                     # Extract text from content blocks
                     texts = []
                     for block in content:
-                        if block.get("type") == "text":
-                            texts.append(block.get("text", ""))
+                        if block.get("type") == "text":  texts.append(block.get("text", ""))
                     return "\n".join(texts) if texts else str(content)
                 return str(response["result"])
-            elif "error" in response:
-                return f"Error: {response['error'].get('message', 'Unknown error')}"
+            elif "error" in response: return f"Error: {response['error'].get('message', 'Unknown error')}"
 
         return "No response from MCP server"
 
@@ -222,8 +215,7 @@ class MCPManager:
                         description=server_config.get("description", "")
                     ))
 
-            except Exception as e:
-                log_error("Failed to load MCP config", e)
+            except Exception as e: log_error("Failed to load MCP config", e)
 
         return configs
 
@@ -257,8 +249,7 @@ class MCPManager:
 
     def connect_server(self, config: MCPServerConfig) -> bool:
         """Connect to a specific MCP server"""
-        if config.name in self.servers:
-            return True
+        if config.name in self.servers: return True
 
         connection = MCPServerConnection(config)
         if connection.connect():
