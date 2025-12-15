@@ -4,3 +4,4 @@ logs
 data
 history
 .claude
+__pycache__
