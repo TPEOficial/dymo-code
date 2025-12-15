@@ -13,6 +13,7 @@ from rich.box import ROUNDED
 from .config import COLORS, AVAILABLE_MODELS
 from .commands import parse_command, Command, CommandCategory, get_commands_by_category, CATEGORY_ICONS, CATEGORY_NAMES
 from .memory import memory
+from .storage import user_config
 from .ui import (
     console,
     print_help,
@@ -67,12 +68,10 @@ def print_enhanced_help():
 
         for cmd in commands:
             usage = f"/{cmd.name}"
-            if cmd.has_args and cmd.arg_hint:
-                usage += f" <{cmd.arg_hint}>"
+            if cmd.has_args and cmd.arg_hint: usage += f" <{cmd.arg_hint}>"
 
             aliases = ""
-            if cmd.aliases:
-                aliases = f" ({', '.join('/' + a for a in cmd.aliases)})"
+            if cmd.aliases: aliases = f" ({', '.join('/' + a for a in cmd.aliases)})"
 
             table.add_row(usage, cmd.description + aliases)
 
@@ -131,8 +130,7 @@ class CommandHandler:
 
         elif name == "clear":
             self.agent.clear_history()
-            if self.queue_manager:
-                self.queue_manager.clear_queue()
+            if self.queue_manager: self.queue_manager.clear_queue()
             console.clear()
             display_success("Conversation cleared.")
             return True, None
@@ -161,6 +159,7 @@ class CommandHandler:
                 return True, None
 
             memory.set_profile("name", args, category="identity")
+            user_config.user_name = args
             display_success(f"Your name has been saved as: {args}")
             return True, None
 
@@ -171,12 +170,9 @@ class CommandHandler:
 
             try:
                 fact_id = int(args)
-                if memory.delete_fact(fact_id):
-                    display_success(f"Fact #{fact_id} deleted.")
-                else:
-                    display_error(f"Fact #{fact_id} not found")
-            except ValueError:
-                display_error("ID must be a number.")
+                if memory.delete_fact(fact_id): display_success(f"Fact #{fact_id} deleted.")
+                else: display_error(f"Fact #{fact_id} not found")
+            except ValueError: display_error("ID must be a number.")
             return True, None
 
         elif name == "facts":
@@ -245,8 +241,7 @@ class CommandHandler:
                     config = AVAILABLE_MODELS[model_key]
                     display_success(f"Switched to {config.name}")
                     show_status(self.agent.model_key)
-                else:
-                    display_error(f"Unknown model. Use /models to see options.")
+                else: display_error(f"Unknown model. Use /models to see options.")
             else:
                 # Show current model
                 config = AVAILABLE_MODELS[self.agent.model_key]
@@ -293,11 +288,9 @@ class CommandHandler:
                     if self.agent.set_model(key):
                         display_success(f"Switched to Ollama model: {model_id}")
                         show_status(self.agent.model_key)
-                    else:
-                        display_error(f"Failed to switch to model: {model_id}")
+                    else: display_error(f"Failed to switch to model: {model_id}")
 
-                else:
-                    display_error("Unknown ollama command. Use: list, use")
+                else: display_error("Unknown ollama command. Use: list, use")
             else:
                 # Show ollama status and models
                 models = self.agent.client_manager.get_ollama_models()
@@ -352,8 +345,7 @@ class CommandHandler:
                     mcp_manager.disconnect_all()
                     display_success("Disconnected from all MCP servers")
 
-                else:
-                    display_error("Unknown mcp command. Use: list, tools, add, remove, connect, disconnect")
+                else: display_error("Unknown mcp command. Use: list, tools, add, remove, connect, disconnect")
             else:
                 status = mcp_manager.get_server_status()
                 print_mcp_servers(status)

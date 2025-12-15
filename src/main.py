@@ -21,6 +21,7 @@ from src.memory import memory
 from src.command_handler import CommandHandler
 from src.terminal_ui import terminal_ui as async_input
 from src.storage import user_config, get_data_directory
+from src.utils.basics import set_terminal_title
 from src.ui import (
     console,
     print_banner,
@@ -164,6 +165,7 @@ def main():
     """Main entry point"""
     console.clear()
     print_banner()
+    set_terminal_title("💬 Dymo Code")
 
     # Check for first run and do setup if needed
     if user_config.is_first_run:
