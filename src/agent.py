@@ -15,11 +15,34 @@ from rich.box import ROUNDED
 from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt
 from .clients import ClientManager, StreamChunk, ToolCall, ExecutedTool
 from .tools import TOOL_DEFINITIONS, execute_tool, TOOLS, get_all_tool_definitions
-from .ui import console, display_tool_call, display_tool_result, display_executed_tool, display_code_execution_result, display_info
+from .ui import console, display_tool_call, display_tool_result, display_executed_tool, display_code_execution_result, display_info, display_warning
 from .logger import log_error, log_api_error, log_tool_error, log_debug
 from .history import history_manager
 from .name_detector import detect_and_save_name
 from .context_manager import context_manager
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Error Detection Patterns
+# ═══════════════════════════════════════════════════════════════════════════════
+
+TOKEN_LIMIT_ERROR_PATTERNS = [
+    "request too large",
+    "too many tokens",
+    "token limit",
+    "context length exceeded",
+    "maximum context length",
+    "reduce your message size",
+    "tokens per minute",
+    "rate_limit_exceeded",
+    "413",
+    "context_length_exceeded",
+    "max_tokens",
+]
+
+def is_token_limit_error(error: Exception) -> bool:
+    """Check if an error is related to token/context limits"""
+    error_str = str(error).lower()
+    return any(pattern in error_str for pattern in TOKEN_LIMIT_ERROR_PATTERNS)
 
 # Type for status callback
 StatusCallback = Optional[Callable[[str, str], None]]
@@ -107,6 +130,53 @@ class Agent:
                 msg["content"] = msg["content"] + f"\n\n# User Memory Context\n{context}"
                 log_debug("Added memory context to system prompt")
                 break
+
+    def _emergency_context_reduction(self, keep_last: int = 4) -> bool:
+        """
+        Emergency context reduction when token limit is hit.
+        More aggressive than normal compression - keeps only the most recent messages.
+
+        Returns True if reduction was possible, False if already at minimum.
+        """
+        # Separate system prompt from conversation
+        system_msg = None
+        conversation_msgs = []
+
+        for msg in self.messages:
+            if msg.get("role") == "system":
+                system_msg = msg
+            else:
+                conversation_msgs.append(msg)
+
+        # If we don't have enough messages to reduce, we can't help
+        if len(conversation_msgs) <= keep_last:
+            return False
+
+        # Keep only the last N messages (user + assistant pairs)
+        messages_to_keep = conversation_msgs[-keep_last:]
+
+        # Rebuild messages list
+        new_messages = []
+        if system_msg:
+            new_messages.append(system_msg)
+
+        # Add a context note about the reduction
+        new_messages.append({
+            "role": "user",
+            "content": "[Context was reduced due to token limits. Previous conversation history has been cleared to continue.]"
+        })
+        new_messages.append({
+            "role": "assistant",
+            "content": "Understood. I'll continue with the available context."
+        })
+
+        new_messages.extend(messages_to_keep)
+
+        old_count = len(self.messages)
+        self.messages = new_messages
+        log_debug(f"Emergency context reduction: {old_count} -> {len(self.messages)} messages")
+
+        return True
 
     def _generate_title_async(self, first_message: str):
         """Generate title for the conversation"""
@@ -305,19 +375,21 @@ class Agent:
 
         return follow_up_response
 
-    def chat(self, user_input: str) -> str:
+    def chat(self, user_input: str, _retry_count: int = 0) -> str:
         """Send a message and get a response"""
-        self.messages.append({"role": "user", "content": user_input})
+        # Only add user message on first attempt (not on retries)
+        if _retry_count == 0:
+            self.messages.append({"role": "user", "content": user_input})
 
-        # Auto-detect and save user name if mentioned
-        detected_name = detect_and_save_name(user_input)
-        if detected_name:
-            display_info(f"Nice to meet you, {detected_name}! I'll remember your name.")
+            # Auto-detect and save user name if mentioned
+            detected_name = detect_and_save_name(user_input)
+            if detected_name:
+                display_info(f"Nice to meet you, {detected_name}! I'll remember your name.")
 
-        # Generate title on first message
-        if self.is_first_message:
-            self.is_first_message = False
-            self._generate_title_async(user_input)
+            # Generate title on first message
+            if self.is_first_message:
+                self.is_first_message = False
+                self._generate_title_async(user_input)
 
         try:
             client = self.client_manager.get_client(self.model_key)
@@ -421,11 +493,33 @@ class Agent:
             return response_text
 
         except Exception as e:
-            error_msg = f"Error: {str(e)}"
+            error_str = str(e)
+
+            # Check if this is a token limit error and we can retry
+            if is_token_limit_error(e) and _retry_count < 3:
+                log_debug(f"Token limit error detected (attempt {_retry_count + 1})")
+
+                # Try emergency context reduction
+                if self._emergency_context_reduction(keep_last=4 if _retry_count == 0 else 2):
+                    display_warning(
+                        f"Token limit exceeded. Reducing context and retrying... "
+                        f"(attempt {_retry_count + 1}/3)"
+                    )
+                    # Retry with reduced context
+                    return self.chat(user_input, _retry_count=_retry_count + 1)
+                else:
+                    # Can't reduce further - clear everything except system prompt and current message
+                    display_warning("Token limit exceeded. Clearing conversation history to continue...")
+                    self._init_system_prompt()
+                    self.messages.append({"role": "user", "content": user_input})
+                    return self.chat(user_input, _retry_count=_retry_count + 1)
+
+            # Not a token error or max retries reached
+            error_msg = f"Error: {error_str}"
             log_api_error(
                 provider=AVAILABLE_MODELS[self.model_key].provider.value,
                 model=model_id,
-                error=str(e),
+                error=error_str,
                 request_context={"message_count": len(self.messages)}
             )
             console.print(Panel(error_msg, border_style=f"{COLORS['error']}", box=ROUNDED))

@@ -575,6 +575,10 @@ def display_info(message: str):
     """Display an info message"""
     console.print(f"\n[{COLORS['muted']}]{message}[/]\n")
 
+def display_warning(message: str):
+    """Display a warning message"""
+    console.print(f"\n[{COLORS['warning']}]⚠[/] {message}\n")
+
 def get_prompt_text() -> Text:
     """Get the input prompt text"""
     prompt_text = Text()
