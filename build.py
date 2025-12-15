@@ -21,12 +21,9 @@ def get_platform_info():
     system = platform.system().lower()
     machine = platform.machine().lower()
 
-    if system == "windows":
-        return "windows", "exe", f"dymo-code-windows-{machine}.exe"
-    elif system == "darwin":
-        return "macos", "", f"dymo-code-macos-{machine}"
-    else:
-        return "linux", "", f"dymo-code-linux-{machine}"
+    if system == "windows": return "windows", "exe", f"dymo-code-windows-{machine}.exe"
+    elif system == "darwin": return "macos", "", f"dymo-code-macos-{machine}"
+    else: return "linux", "", f"dymo-code-linux-{machine}"
 
 
 def clean_build():
@@ -110,8 +107,7 @@ def build():
         print(f"Output: {renamed}")
         print(f"Size: {renamed.stat().st_size / (1024*1024):.2f} MB")
         print(f"{'='*60}\n")
-    else:
-        print(f"\nWarning: Expected output file not found at {original}")
+    else: print(f"\nWarning: Expected output file not found at {original}")
 
 
 def show_help():
@@ -143,5 +139,4 @@ def main():
     build()
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
