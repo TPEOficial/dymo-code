@@ -3,7 +3,10 @@ Main entry point for Dymo Code
 Enhanced with memory system, command autocomplete, and multi-agent support
 """
 from typing import Optional
-import os, sys, time, threading
+import os, sys, time, threading, json
+from urllib.request import urlopen
+from urllib.error import URLError
+from pathlib import Path
 
 # Add parent directory to path for imports when running directly
 if __name__ == "__main__": sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,6 +37,62 @@ from src.ui import (
     display_info,
     print_welcome_with_memory
 )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Version Check
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VERSION_CHECK_URL = "https://github.com/TPEOficial/dymo-code/raw/refs/heads/main/static-api/version.json"
+_update_available: Optional[str] = None
+
+def _get_local_version() -> Optional[str]:
+    """Get the local version from static-api/version.json"""
+    try:
+        # Get the project root (parent of src/)
+        project_root = Path(__file__).parent.parent
+        version_file = project_root / "static-api" / "version.json"
+        if version_file.exists():
+            with open(version_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("version")
+    except Exception:
+        pass
+    return None
+
+def _check_for_updates():
+    """Check for updates in background and store result"""
+    global _update_available
+    try:
+        local_version = _get_local_version()
+        if not local_version:
+            return
+
+        with urlopen(VERSION_CHECK_URL, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            remote_version = data.get("version")
+
+            if remote_version and remote_version != local_version:
+                _update_available = remote_version
+    except (URLError, json.JSONDecodeError, Exception):
+        pass
+
+def start_version_check():
+    """Start version check in background thread"""
+    thread = threading.Thread(target=_check_for_updates, daemon=True)
+    thread.start()
+
+def show_update_notification():
+    """Show update notification if available"""
+    if _update_available:
+        local_version = _get_local_version() or "unknown"
+        console.print(
+            f"[{COLORS['warning']}]⬆ Update available: v{_update_available} "
+            f"(current: v{local_version})[/]"
+        )
+        console.print(
+            f"[{COLORS['muted']}]  Run: git pull origin main[/]"
+        )
+        console.print()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Input Handler with Queue Support
@@ -167,6 +226,9 @@ def main():
     print_banner()
     set_terminal_title("💬 Dymo Code")
 
+    # Start version check in background (non-blocking)
+    start_version_check()
+
     # Check for first run and do setup if needed
     if user_config.is_first_run:
         username = run_first_time_setup()
@@ -200,6 +262,10 @@ def main():
     console.print()
     show_status(agent.model_key)
     console.print()
+
+    # Show update notification if available (version check runs in background)
+    time.sleep(0.3)  # Small delay to allow version check to complete
+    show_update_notification()
 
     while True:
         try:
