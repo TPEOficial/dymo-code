@@ -21,13 +21,6 @@
 
 **Dymo Code** is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
 
-> [!NOTE]\
-> All documentation will be migrated to [Dymo Docs](https://tpe.li/D-SNATCH).
-
-**Disclaimer**: This tool are for technical discussion and sharing only. Illegal use is strictly prohibited.
-
-<img src="./docs/images/basic-diagram.jpeg" loading="lazy" />
-
 ### Use (for development)
 
 First clone the repository:
