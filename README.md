@@ -23,6 +23,18 @@
 
 **Dymo Code** is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
 
+### Use
+
+1. First, download the latest version of Dymo Code from the [releases](https://github.com/TPEOficial/dymo-code/releases).
+
+2. Go to the folder where you want to initialize the project.
+
+3. Optional: Set the binary you downloaded in the PATH so you can run it as `dymo-code`.
+
+4. Enter the empty or existing project you created and run the binary path or command if you defined it in the PATH.
+
+5. If this is your first time, for most providers you will need an API Key. Once you have it, in Dymo Code, run the command `/setapikey <provider> <apikey>`.
+
 ### Use (for development)
 
 First clone the repository:
