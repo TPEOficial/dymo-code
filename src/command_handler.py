@@ -129,12 +129,25 @@ class CommandHandler:
             return True, None
 
         elif name == "version":
-            from .main import get_version, _update_available
-            version = get_version()
-            console.print(f"\n[bold {COLORS['primary']}]Dymo Code[/] [bold]v{version}[/]")
-            console.print(f"[{COLORS['muted']}]https://github.com/TPEOficial/dymo-code[/]")
-            if _update_available:
-                console.print(f"[{COLORS['warning']}]Update available: v{_update_available}[/]")
+            from .main import get_version, get_remote_version
+            local_version = get_version()
+            console.print(f"\n[bold {COLORS['primary']}]Dymo Code[/]")
+            console.print(f"[{COLORS['muted']}]https://github.com/TPEOficial/dymo-code[/]\n")
+            console.print(f"  [bold]Local version:[/]  v{local_version}")
+
+            # Fetch remote version
+            console.print(f"  [{COLORS['muted']}]Checking remote...[/]", end="\r")
+            remote_version = get_remote_version()
+
+            if remote_version:
+                if remote_version != local_version:
+                    console.print(f"  [bold]Remote version:[/] v{remote_version} [{COLORS['warning']}](update available)[/]")
+                    console.print(f"\n  [{COLORS['muted']}]Download: https://github.com/TPEOficial/dymo-code/releases[/]")
+                else:
+                    console.print(f"  [bold]Remote version:[/] v{remote_version} [{COLORS['success']}](up to date)[/]    ")
+            else:
+                console.print(f"  [bold]Remote version:[/] [{COLORS['error']}]Could not fetch[/]              ")
+
             console.print()
             return True, None
 

@@ -251,6 +251,17 @@ TOOLS: Dict[str, Callable] = {
     "create_folder": create_folder,
     "create_file": create_file,
     "run_command": run_command,
+    # Aliases - some models use different names for the same tools
+    "replace_file": create_file,      # Alias for create_file
+    "write_file": create_file,        # Alias for create_file
+    "edit_file": create_file,         # Alias for create_file
+    "update_file": create_file,       # Alias for create_file
+    "save_file": create_file,         # Alias for create_file
+    "mkdir": create_folder,           # Alias for create_folder
+    "execute": run_command,           # Alias for run_command
+    "shell": run_command,             # Alias for run_command
+    "ls": list_files_in_dir,          # Alias for list_files_in_dir
+    "cat": read_file,                 # Alias for read_file
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

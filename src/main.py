@@ -57,6 +57,21 @@ def get_version() -> str:
         pass
     return "unknown"
 
+def get_remote_version() -> Optional[str]:
+    """Get the remote version from GitHub (synchronous)"""
+    try:
+        request = Request(
+            VERSION_CHECK_URL,
+            headers={"User-Agent": "Dymo-Code-Update-Checker"}
+        )
+        ssl_context = _create_ssl_context()
+
+        with urlopen(request, timeout=5, context=ssl_context) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data.get("version")
+    except Exception:
+        return None
+
 def _create_ssl_context():
     """Create SSL context that works in compiled mode"""
     try:
