@@ -67,6 +67,7 @@ $ python run.py
 | AI Chat                           | In development      |   ✅   |
 | Multi-Agent	                      | In development	    |   ⚠️   |
 | Support for multiple AI providers | In development      |   ⚠️   |
+| Jailbreak Mode                    | In development      |   ⚠️   |
 | MCP Support                       | In BETA Phase       |   ⚠️   |
 
 ### Supported AI Models

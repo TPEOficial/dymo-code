@@ -129,11 +129,11 @@ class StatusSpinner:
             self._thread.join(timeout=0.2)
             self._thread = None
 
-        # Clear the spinner line
-        if self._last_line_len > 0:
-            sys.stdout.write("\r" + " " * (self._last_line_len + 5) + "\r")
-            sys.stdout.flush()
-            self._last_line_len = 0
+        # Clear the spinner line completely
+        # Use ANSI escape codes for reliable clearing
+        sys.stdout.write("\r\033[K")  # Move to start of line and clear to end
+        sys.stdout.flush()
+        self._last_line_len = 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -321,8 +321,12 @@ class TerminalUI:
         self.spinner.start(status, detail)
 
     def update_status(self, status: str = None, detail: str = None):
-        """Update the processing status message"""
-        self.spinner.update(status, detail)
+        """Update the processing status message. Use status='streaming' to stop spinner."""
+        if status == "streaming":
+            # Stop spinner when streaming starts to avoid interference with output
+            self.spinner.stop()
+        else:
+            self.spinner.update(status, detail)
 
     def stop_processing(self):
         """Stop the processing spinner"""

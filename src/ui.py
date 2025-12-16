@@ -16,6 +16,7 @@ from rich.columns import Columns
 from rich.padding import Padding
 
 from .config import COLORS, AVAILABLE_MODELS, ModelProvider, PROVIDER_CONFIGS
+from .lib.prompts import mode_manager
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Console Setup
@@ -147,12 +148,17 @@ def print_models(current_model: str, provider_availability: Dict[str, Any] = Non
 def show_status(model_key: str):
     """Show current status bar"""
     config = AVAILABLE_MODELS[model_key]
+    mode_config = mode_manager.current_config
+
     status = Text()
     status.append("Model: ", style=f"{COLORS['muted']}")
     status.append(f"{config.name}", style=f"bold {COLORS['secondary']}")
     status.append(" │ ", style=f"{COLORS['muted']}")
     status.append("Provider: ", style=f"{COLORS['muted']}")
     status.append(f"{config.provider.value}", style=f"{COLORS['accent']}")
+    status.append(" │ ", style=f"{COLORS['muted']}")
+    status.append("Mode: ", style=f"{COLORS['muted']}")
+    status.append(f"{mode_config.icon} {mode_config.display_name}", style=f"bold {COLORS['warning']}")
     status.append(" │ ", style=f"{COLORS['muted']}")
     status.append("CWD: ", style=f"{COLORS['muted']}")
     status.append(f"{os.getcwd()}", style=f"{COLORS['success']}")

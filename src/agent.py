@@ -4,16 +4,20 @@ Main Agent class for Dymo Code
 
 import json
 import re
+import os
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 from rich.box import ROUNDED
+from rich.markdown import Markdown
 
 from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt
 from .clients import ClientManager, StreamChunk, ToolCall, ExecutedTool
+from .lib.prompts import mode_manager
 from .tools import TOOL_DEFINITIONS, execute_tool, TOOLS, get_all_tool_definitions
 from .ui import console, display_tool_call, display_tool_result, display_executed_tool, display_code_execution_result, display_info, display_warning
 from .logger import log_error, log_api_error, log_tool_error, log_debug
@@ -49,6 +53,112 @@ StatusCallback = Optional[Callable[[str, str], None]]
 
 # Maximum number of tool call rounds to prevent infinite loops
 MAX_TOOL_ROUNDS = 5
+
+# Pattern to detect file references with @ symbol
+# Matches @path/to/file or @./relative/path or @C:\windows\path
+FILE_REFERENCE_PATTERN = re.compile(r'@((?:[A-Za-z]:)?[^\s@]+)')
+
+def process_file_references(text: str) -> Tuple[str, List[Dict[str, str]]]:
+    """
+    Process @ file references in text.
+    Returns (processed_text, list_of_file_contents)
+
+    Examples:
+        @src/main.py -> reads src/main.py
+        @./config.json -> reads ./config.json
+        @C:\\path\\file.txt -> reads C:\\path\\file.txt
+    """
+    file_contents = []
+    matches = FILE_REFERENCE_PATTERN.findall(text)
+
+    for match in matches:
+        file_path = match.strip()
+
+        # Skip if it looks like an email
+        if '@' in file_path or file_path.startswith('http'):
+            continue
+
+        # Resolve the path
+        try:
+            path = Path(file_path)
+            if not path.is_absolute():
+                path = Path(os.getcwd()) / path
+
+            if path.exists():
+                if path.is_file():
+                    # Read file content
+                    try:
+                        content = path.read_text(encoding='utf-8', errors='replace')
+                        file_contents.append({
+                            "path": str(path),
+                            "type": "file",
+                            "content": content
+                        })
+                    except Exception as e:
+                        file_contents.append({
+                            "path": str(path),
+                            "type": "file",
+                            "error": f"Could not read file: {str(e)}"
+                        })
+                elif path.is_dir():
+                    # List directory contents
+                    try:
+                        items = []
+                        for item in path.iterdir():
+                            item_type = "dir" if item.is_dir() else "file"
+                            items.append(f"{'[DIR]' if item.is_dir() else '[FILE]'} {item.name}")
+                        file_contents.append({
+                            "path": str(path),
+                            "type": "directory",
+                            "content": "\n".join(sorted(items))
+                        })
+                    except Exception as e:
+                        file_contents.append({
+                            "path": str(path),
+                            "type": "directory",
+                            "error": f"Could not list directory: {str(e)}"
+                        })
+            else:
+                file_contents.append({
+                    "path": file_path,
+                    "type": "unknown",
+                    "error": "Path does not exist"
+                })
+        except Exception as e:
+            file_contents.append({
+                "path": file_path,
+                "type": "unknown",
+                "error": f"Invalid path: {str(e)}"
+            })
+
+    return text, file_contents
+
+
+def format_file_context(file_contents: List[Dict[str, str]]) -> str:
+    """Format file contents into context string for the AI"""
+    if not file_contents:
+        return ""
+
+    context_parts = ["\n\n--- Referenced Files/Paths ---"]
+
+    for item in file_contents:
+        path = item.get("path", "unknown")
+        item_type = item.get("type", "unknown")
+
+        if "error" in item:
+            context_parts.append(f"\n[{path}] Error: {item['error']}")
+        elif item_type == "file":
+            content = item.get("content", "")
+            # Truncate very long files
+            if len(content) > 10000:
+                content = content[:10000] + "\n... [truncated, file too long]"
+            context_parts.append(f"\n[{path}]\n```\n{content}\n```")
+        elif item_type == "directory":
+            content = item.get("content", "")
+            context_parts.append(f"\n[{path}] (directory contents):\n{content}")
+
+    context_parts.append("\n--- End Referenced Files ---\n")
+    return "\n".join(context_parts)
 
 # Patterns to detect tool calls in text responses
 TOOL_CALL_PATTERNS = [
@@ -131,6 +241,30 @@ class Agent:
                 log_debug("Added memory context to system prompt")
                 break
 
+    def apply_mode(self, mode_prompt: str = None):
+        """
+        Apply a mode to the agent by modifying the system prompt.
+        If mode_prompt is None, resets to default system prompt.
+        """
+        # Get the base system prompt
+        base_prompt = get_system_prompt()
+
+        if mode_prompt:
+            # Prepend mode prompt to the system prompt
+            new_prompt = f"{mode_prompt}\n\n---\n\n{base_prompt}"
+        else:
+            new_prompt = base_prompt
+
+        # Update the system message
+        for msg in self.messages:
+            if msg.get("role") == "system":
+                msg["content"] = new_prompt
+                log_debug(f"Applied mode prompt to agent")
+                break
+
+        # Also store the mode prompt for reinitialization
+        self._mode_prompt = mode_prompt
+
     def _emergency_context_reduction(self, keep_last: int = 4) -> bool:
         """
         Emergency context reduction when token limit is hit.
@@ -149,8 +283,7 @@ class Agent:
                 conversation_msgs.append(msg)
 
         # If we don't have enough messages to reduce, we can't help
-        if len(conversation_msgs) <= keep_last:
-            return False
+        if len(conversation_msgs) <= keep_last: return False
 
         # Keep only the last N messages (user + assistant pairs)
         messages_to_keep = conversation_msgs[-keep_last:]
@@ -329,8 +462,9 @@ class Agent:
         follow_up_response = ""
         pending_tool_calls = []
         has_content = False
+        live_display = None
 
-        # Stream without Live panel first to collect response
+        # Stream with Live panel for smooth updates
         for chunk in client.stream_chat(
             messages=self.messages,
             model=model_id,
@@ -339,20 +473,31 @@ class Agent:
             if chunk.content:
                 if not has_content:
                     has_content = True
-                    # Start the panel only when we have content
-                    console.print(f"[{COLORS['secondary']}]╭─ Assistant {'─' * 70}╮[/]")
+                    # Stop spinner and start Live display
+                    self._update_status("streaming", "")
+                    live_display = Live(
+                        Panel(Markdown(follow_up_response or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
+                        console=console,
+                        refresh_per_second=10,
+                        transient=True
+                    )
+                    live_display.start()
 
                 follow_up_response += chunk.content
-                # Print content directly (streaming effect)
-                console.print(chunk.content, end="", highlight=False)
+                # Update the live panel
+                if live_display:
+                    live_display.update(
+                        Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
+                    )
 
             if chunk.tool_calls:
                 pending_tool_calls.extend(chunk.tool_calls)
 
-        # Close the panel if we printed content
-        if has_content:
-            console.print()
-            console.print(f"[{COLORS['secondary']}]╰{'─' * 78}╯[/]")
+        # Stop live display and show final panel
+        if live_display:
+            live_display.stop()
+        if has_content and follow_up_response:
+            console.print(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
 
         # Check for tool calls in text response
         if not pending_tool_calls and follow_up_response:
@@ -379,7 +524,23 @@ class Agent:
         """Send a message and get a response"""
         # Only add user message on first attempt (not on retries)
         if _retry_count == 0:
-            self.messages.append({"role": "user", "content": user_input})
+            # Process @ file references
+            processed_input, file_contents = process_file_references(user_input)
+            file_context = format_file_context(file_contents)
+
+            # Show info about referenced files
+            if file_contents:
+                valid_refs = [f for f in file_contents if "error" not in f]
+                error_refs = [f for f in file_contents if "error" in f]
+                if valid_refs:
+                    display_info(f"Referenced {len(valid_refs)} file(s)/path(s)")
+                for err_ref in error_refs:
+                    display_warning(f"@{err_ref['path']}: {err_ref.get('error', 'unknown error')}")
+
+            # Append file context to user input if any files were referenced
+            final_input = user_input + file_context if file_context else user_input
+
+            self.messages.append({"role": "user", "content": final_input})
 
             # Auto-detect and save user name if mentioned
             detected_name = detect_and_save_name(user_input)
@@ -419,7 +580,8 @@ class Agent:
 
             # Get all tools including MCP tools
             all_tools = get_all_tool_definitions()
-            has_started_panel = False
+            has_started_streaming = False
+            live_display = None
 
             # Update status to generating
             self._update_status("generating", "")
@@ -431,15 +593,25 @@ class Agent:
             ):
                 # Handle content
                 if chunk.content:
-                    if not has_started_panel:
-                        has_started_panel = True
-                        # Update status to show we're getting a response
-                        self._update_status("generating", "response")
-                        console.print(f"[{COLORS['secondary']}]╭─ Assistant {'─' * 70}╮[/]")
+                    if not has_started_streaming:
+                        has_started_streaming = True
+                        # Stop spinner before showing content
+                        self._update_status("streaming", "")
+                        # Start Live display for streaming
+                        live_display = Live(
+                            Panel(Markdown(response_text or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
+                            console=console,
+                            refresh_per_second=10,
+                            transient=True
+                        )
+                        live_display.start()
 
                     response_text += chunk.content
-                    # Stream content directly
-                    console.print(chunk.content, end="", highlight=False)
+                    # Update the live panel with new content
+                    if live_display:
+                        live_display.update(
+                            Panel(Markdown(response_text), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
+                        )
 
                 # Collect tool calls
                 if chunk.tool_calls:
@@ -453,10 +625,11 @@ class Agent:
                 if chunk.reasoning:
                     log_debug(f"Model reasoning: {chunk.reasoning[:200]}...")
 
-            # Close the panel if we printed content
-            if has_started_panel:
-                console.print()
-                console.print(f"[{COLORS['secondary']}]╰{'─' * 78}╯[/]")
+            # Stop live display and show final panel
+            if live_display:
+                live_display.stop()
+            if has_started_streaming and response_text:
+                console.print(Panel(Markdown(response_text), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
 
             # Display executed tools (code execution, web search, etc.)
             if executed_tools_list:

@@ -15,6 +15,7 @@ from .config import COLORS, AVAILABLE_MODELS
 from .commands import parse_command, Command, CommandCategory, get_commands_by_category, CATEGORY_ICONS, CATEGORY_NAMES
 from .memory import memory
 from .storage import user_config
+from .lib.prompts import mode_manager, MODE_CONFIGS, AgentMode
 from .ui import (
     console,
     print_help,
@@ -313,6 +314,49 @@ class CommandHandler:
         elif name == "models":
             provider_availability = self.agent.client_manager.get_available_providers()
             print_models(self.agent.model_key, provider_availability)
+            return True, None
+
+        elif name == "mode":
+            if args:
+                # Change mode
+                mode_name = args.strip().lower()
+                if mode_manager.set_mode_by_name(mode_name):
+                    config = mode_manager.current_config
+                    # Apply mode to agent
+                    self.agent.apply_mode(mode_manager.get_mode_prompt())
+                    display_success(f"Switched to {config.icon} {config.display_name} mode")
+                    show_status(self.agent.model_key)
+                else:
+                    display_error(f"Unknown mode. Use /modes to see options.")
+            else:
+                # Show current mode
+                config = mode_manager.current_config
+                console.print(
+                    f"\n[{COLORS['muted']}]Current mode:[/] "
+                    f"[bold {COLORS['secondary']}]{config.icon} {config.display_name}[/] "
+                    f"[{COLORS['muted']}]({config.description})[/]\n"
+                )
+            return True, None
+
+        elif name == "modes":
+            console.print(f"\n[bold {COLORS['secondary']}]Available Agent Modes[/]\n")
+
+            table = Table(box=ROUNDED, header_style=f"bold {COLORS['muted']}")
+            table.add_column("Mode", style=f"{COLORS['accent']}", width=15)
+            table.add_column("Description", style="white")
+            table.add_column("Status", width=10)
+
+            current = mode_manager.current_mode
+            for mode, config in MODE_CONFIGS.items():
+                status = f"[{COLORS['success']}]Active[/]" if mode == current else ""
+                table.add_row(
+                    f"{config.icon} {config.display_name}",
+                    config.description,
+                    status
+                )
+
+            console.print(table)
+            console.print(f"\n[{COLORS['muted']}]Use /mode <name> to switch modes[/]\n")
             return True, None
 
         elif name == "providers":

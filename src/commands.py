@@ -172,6 +172,20 @@ COMMANDS: Dict[str, Command] = {
         category=CommandCategory.MODEL,
         usage="/models"
     ),
+    "mode": Command(
+        name="mode",
+        description="View or change agent mode (standard/jailbreak)",
+        category=CommandCategory.MODEL,
+        usage="/mode [mode]",
+        has_args=True,
+        arg_hint="standard|jailbreak"
+    ),
+    "modes": Command(
+        name="modes",
+        description="View all available agent modes",
+        category=CommandCategory.MODEL,
+        usage="/modes"
+    ),
 
     # Provider Commands
     "providers": Command(
