@@ -5,16 +5,12 @@ Terminal UI components for Dymo Code
 import os
 import sys
 from typing import List, Dict, Any
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.syntax import Syntax
-from rich.box import ROUNDED, SIMPLE, DOUBLE
-from rich.columns import Columns
-from rich.padding import Padding
-
+from rich.box import ROUNDED
 from .config import COLORS, AVAILABLE_MODELS, ModelProvider, PROVIDER_CONFIGS
 from .lib.prompts import mode_manager
 
@@ -83,7 +79,7 @@ def print_help():
         ("/queue", "Show pending messages in queue"),
         ("/clearqueue", "Clear all queued messages"),
         ("/clear", "Clear conversation history"),
-        ("/exit, /quit", "Exit the agent"),
+        ("/exit, /quit", "Exit the agent")
     ]
 
     for cmd, desc in commands:
@@ -112,8 +108,7 @@ def print_models(current_model: str, provider_availability: Dict[str, Any] = Non
 
         # Check availability
         is_available = True
-        if provider_availability:
-            is_available = provider_availability.get(provider, False)
+        if provider_availability: is_available = provider_availability.get(provider, False)
 
         availability_icon = "[green]●[/green]" if is_available else "[red]○[/red]"
 
@@ -328,10 +323,7 @@ def display_code_execution_result(code: str, output: str, has_error: bool = Fals
 
 def display_error(message: str):
     """Display an error message"""
-    console.print(
-        Panel(message, border_style=f"{COLORS['error']}", box=ROUNDED)
-    )
-
+    console.print(Panel(message, border_style=f"{COLORS['error']}", box=ROUNDED))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Diff Display (Git-style with line numbers)
@@ -378,10 +370,8 @@ def display_file_diff(
 
     for line in diff:
         # File headers
-        if line.startswith("---"):
-            content.append(line.rstrip() + "\n", style=f"bold {COLORS['error']}")
-        elif line.startswith("+++"):
-            content.append(line.rstrip() + "\n", style=f"bold {COLORS['success']}")
+        if line.startswith("---"): content.append(line.rstrip() + "\n", style=f"bold {COLORS['error']}")
+        elif line.startswith("+++"): content.append(line.rstrip() + "\n", style=f"bold {COLORS['success']}")
         # Hunk header (@@ -1,5 +1,6 @@)
         elif line.startswith("@@"):
             content.append(line.rstrip() + "\n", style=f"bold {COLORS['secondary']}")
@@ -448,8 +438,7 @@ def display_file_creation(file_path: str, content: str, max_lines: int = 30):
         text.append("+ ", style=f"bold {COLORS['success']}")
         text.append(line + "\n", style=f"{COLORS['success']}")
 
-    if total_lines > max_lines:
-        text.append(f"\n... and {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
+    if total_lines > max_lines: text.append(f"\n... and {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
 
     text.append("─" * 60, style=f"{COLORS['muted']}")
 
@@ -528,8 +517,7 @@ def display_file_read(file_path: str, content: str, start_line: int = 1, max_lin
         text.append("│ ", style=f"dim {COLORS['muted']}")
         text.append(line + "\n", style="white")
 
-    if total_lines > max_lines:
-        text.append(f"\n... {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
+    if total_lines > max_lines: text.append(f"\n... {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
 
     console.print(Panel(
         text,
@@ -548,8 +536,7 @@ def display_inline_diff(old_text: str, new_text: str, context: str = ""):
     """
     text = Text()
 
-    if context:
-        text.append(f"{context}\n", style=f"dim {COLORS['muted']}")
+    if context: text.append(f"{context}\n", style=f"dim {COLORS['muted']}")
 
     text.append("- ", style=f"bold {COLORS['error']}")
     text.append(old_text + "\n", style=f"{COLORS['error']}")
@@ -566,10 +553,8 @@ def display_edit_summary(file_path: str, additions: int, deletions: int):
     text.append(f"{file_path} ", style="white bold")
     text.append("| ", style=f"{COLORS['muted']}")
 
-    if additions > 0:
-        text.append(f"+{additions} ", style=f"bold {COLORS['success']}")
-    if deletions > 0:
-        text.append(f"-{deletions}", style=f"bold {COLORS['error']}")
+    if additions > 0: text.append(f"+{additions} ", style=f"bold {COLORS['success']}")
+    if deletions > 0: text.append(f"-{deletions}", style=f"bold {COLORS['error']}")
 
     console.print(text)
 
@@ -620,8 +605,7 @@ def print_conversations(conversations: list):
                 from datetime import datetime
                 dt = datetime.fromisoformat(updated)
                 updated = dt.strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
+            except: pass
 
         table.add_row(
             conv.get("id", ""),
@@ -633,7 +617,6 @@ def print_conversations(conversations: list):
     console.print()
     console.print(table)
     console.print(f"\n[{COLORS['muted']}]Use /resume <id> to continue a conversation[/]\n")
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Memory Display Components
@@ -693,8 +676,7 @@ def print_facts(facts: List[Dict]):
                 from datetime import datetime
                 dt = datetime.fromisoformat(created)
                 created = dt.strftime("%Y-%m-%d")
-            except:
-                pass
+            except: pass
 
         table.add_row(
             str(fact["id"]),
@@ -802,7 +784,6 @@ def print_preferences(preferences: Dict[str, Dict]):
     console.print(table)
     console.print()
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Agent Status Display
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -846,14 +827,10 @@ def print_agents_status(agents: List[Dict]):
     console.print(table)
     console.print()
 
-
 def print_welcome_with_memory(username: str = None):
     """Print welcome message with user's name if known"""
-    if username:
-        greeting = f"Hello, {username}!"
-    else:
-        greeting = "Hello!"
-
+    if username: greeting = f"Hello, {username}!"
+    else: greeting = "Hello!"
     welcome_text = Text()
     welcome_text.append(f"\n{greeting}\n", style=f"bold {COLORS['secondary']}")
     welcome_text.append("Type ", style=f"{COLORS['muted']}")
@@ -861,7 +838,6 @@ def print_welcome_with_memory(username: str = None):
     welcome_text.append(" to see available commands or start chatting.\n", style=f"{COLORS['muted']}")
 
     console.print(welcome_text)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Provider and MCP Display
@@ -891,7 +867,6 @@ def print_providers(provider_availability: Dict = None):
     console.print()
     console.print(table)
     console.print()
-
 
 def print_mcp_servers(server_status: Dict[str, Dict] = None):
     """Print MCP server status"""
@@ -930,7 +905,6 @@ def print_mcp_servers(server_status: Dict[str, Dict] = None):
     console.print(table)
     console.print()
 
-
 def print_mcp_tools(tools: List[Dict] = None):
     """Print available MCP tools"""
     if not tools:
@@ -957,7 +931,6 @@ def print_mcp_tools(tools: List[Dict] = None):
     console.print()
     console.print(table)
     console.print()
-
 
 def print_ollama_models(models: List[str], current_model: str = None):
     """Print locally available Ollama models"""

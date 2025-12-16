@@ -3,9 +3,7 @@ Persistent Memory System for Dymo Code
 Stores user data, preferences, and context across sessions using SQLite
 """
 
-import os
-import sqlite3
-import json
+import sqlite3, json
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from pathlib import Path

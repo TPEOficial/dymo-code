@@ -3,7 +3,6 @@ Conversation history management for Dymo Code
 Stores and retrieves past conversations with auto-generated titles
 """
 
-import os
 import json
 from datetime import datetime
 from pathlib import Path

@@ -3,7 +3,6 @@ Command Handler for Dymo Code
 Handles all slash commands and their execution
 """
 
-import os
 import webbrowser
 from typing import Optional, Tuple, Any
 

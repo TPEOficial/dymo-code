@@ -3,8 +3,7 @@ Message Queue Manager for Dymo Code
 Allows users to queue messages while the agent is processing
 """
 
-import threading
-import queue
+import threading, queue
 from typing import List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime

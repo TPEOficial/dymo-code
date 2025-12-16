@@ -3,9 +3,7 @@ Interactive Input Handler for Dymo Code
 Provides real-time command suggestions and visual feedback
 """
 
-import os
-import sys
-import msvcrt
+import sys, msvcrt
 from typing import List, Optional, Callable
 
 from rich.console import Console

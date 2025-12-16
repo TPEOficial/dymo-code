@@ -3,7 +3,6 @@ Logger module for Dymo Code
 Handles logging errors and debug information to files
 """
 
-import os
 import logging
 from datetime import datetime
 from pathlib import Path
