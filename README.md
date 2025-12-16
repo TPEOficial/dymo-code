@@ -33,7 +33,9 @@
 
 4. Enter the empty or existing project you created and run the binary path or command if you defined it in the PATH.
 
-5. If this is your first time, for most providers you will need an API Key. Once you have it, in Dymo Code, run the command `/setapikey <provider> <apikey>`.
+5A. If this is your first time doing this, most providers will ask you for an API key. In Dymo Code, run the command `/getapikey <provider>`.
+
+5B. If this is your first time, for most providers you will need an API Key. Once you have it, in Dymo Code, run the command `/setapikey <provider> <apikey>`.
 
 ### Use (for development)
 

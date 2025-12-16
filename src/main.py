@@ -3,7 +3,7 @@ Main entry point for Dymo Code
 Enhanced with memory system, command autocomplete, and multi-agent support
 """
 from typing import Optional
-import os, sys, time, threading, json, ssl
+import os, sys, time, threading, json, ssl, tempfile, shutil, zipfile, subprocess
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 from pathlib import Path
@@ -128,6 +128,285 @@ def show_update_notification():
             f"[{COLORS['muted']}]  Download: https://github.com/TPEOficial/dymo-code/releases[/]"
         )
         console.print()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Auto-Update System
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RELEASES_API_URL = "https://api.github.com/repos/TPEOficial/dymo-code/releases/latest"
+_auto_update_info: Optional[dict] = None
+
+def _fetch_latest_release_info() -> Optional[dict]:
+    """Fetch latest release information from GitHub API"""
+    try:
+        request = Request(
+            RELEASES_API_URL,
+            headers={
+                "User-Agent": "Dymo-Code-Update-Checker",
+                "Accept": "application/vnd.github.v3+json"
+            }
+        )
+        ssl_context = _create_ssl_context()
+
+        with urlopen(request, timeout=10, context=ssl_context) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+def _get_download_url_for_platform(release_info: dict) -> Optional[str]:
+    """Get the appropriate download URL for the current platform"""
+    if not release_info or "assets" not in release_info:
+        return None
+
+    platform = sys.platform
+    assets = release_info.get("assets", [])
+
+    # Determine file patterns based on platform
+    if platform == "win32":
+        patterns = ["windows", "win", ".exe", ".zip"]
+    elif platform == "darwin":
+        patterns = ["macos", "mac", "darwin", ".dmg", ".zip"]
+    else:  # Linux and others
+        patterns = ["linux", ".tar.gz", ".zip"]
+
+    # Find matching asset
+    for asset in assets:
+        name = asset.get("name", "").lower()
+        for pattern in patterns:
+            if pattern in name:
+                return asset.get("browser_download_url")
+
+    # Fallback: try zipball URL
+    return release_info.get("zipball_url")
+
+def _download_file(url: str, dest_path: Path, progress_callback=None) -> bool:
+    """Download a file from URL to destination path"""
+    try:
+        request = Request(url, headers={"User-Agent": "Dymo-Code-Updater"})
+        ssl_context = _create_ssl_context()
+
+        with urlopen(request, timeout=120, context=ssl_context) as response:
+            total_size = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 8192
+
+            with open(dest_path, "wb") as f:
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if progress_callback and total_size > 0:
+                        progress = downloaded / total_size
+                        progress_callback(progress)
+
+        return True
+    except Exception as e:
+        return False
+
+def perform_auto_update() -> bool:
+    """
+    Perform automatic update:
+    1. Download latest release
+    2. Extract to temp location
+    3. Replace current executable
+    4. Return True if restart needed
+    """
+    global _auto_update_info
+
+    console.print(f"\n[{COLORS['primary']}]Checking for updates...[/]")
+
+    # Fetch release info
+    release_info = _fetch_latest_release_info()
+    if not release_info:
+        console.print(f"[{COLORS['error']}]Could not fetch release information[/]")
+        return False
+
+    remote_version = release_info.get("tag_name", "").lstrip("v")
+    local_version = get_version()
+
+    if remote_version == local_version:
+        console.print(f"[{COLORS['success']}]Already up to date (v{local_version})[/]")
+        return False
+
+    console.print(f"[{COLORS['warning']}]Update available: v{local_version} -> v{remote_version}[/]")
+
+    # Get download URL
+    download_url = _get_download_url_for_platform(release_info)
+    if not download_url:
+        console.print(f"[{COLORS['error']}]No download available for your platform[/]")
+        console.print(f"[{COLORS['muted']}]Download manually: https://github.com/TPEOficial/dymo-code/releases[/]")
+        return False
+
+    console.print(f"[{COLORS['muted']}]Downloading update...[/]")
+
+    # Create temp directory
+    temp_dir = Path(tempfile.mkdtemp(prefix="dymo_update_"))
+
+    try:
+        # Determine file extension from URL
+        url_path = download_url.split("?")[0]
+        if ".zip" in url_path:
+            ext = ".zip"
+        elif ".tar.gz" in url_path:
+            ext = ".tar.gz"
+        elif ".exe" in url_path:
+            ext = ".exe"
+        else:
+            ext = ".zip"
+
+        download_path = temp_dir / f"dymo_update{ext}"
+
+        # Download with progress
+        def show_progress(progress):
+            bar_width = 30
+            filled = int(bar_width * progress)
+            bar = "█" * filled + "░" * (bar_width - filled)
+            sys.stdout.write(f"\r  [{bar}] {progress:.0%}")
+            sys.stdout.flush()
+
+        if not _download_file(download_url, download_path, show_progress):
+            console.print(f"\n[{COLORS['error']}]Download failed[/]")
+            return False
+
+        console.print(f"\n[{COLORS['success']}]Download complete![/]")
+
+        # Get current executable path
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            current_exe = Path(sys.executable)
+        else:
+            # Running as script - update the source
+            current_exe = Path(__file__).parent.parent
+
+        # Extract and update
+        console.print(f"[{COLORS['muted']}]Installing update...[/]")
+
+        if ext == ".zip":
+            extract_dir = temp_dir / "extracted"
+            with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+            # Find the executable or main directory in extracted files
+            extracted_items = list(extract_dir.iterdir())
+
+            if getattr(sys, 'frozen', False):
+                # For compiled exe: find new exe and replace
+                new_exe = None
+                for item in extract_dir.rglob("*"):
+                    if item.is_file() and item.suffix == ".exe":
+                        new_exe = item
+                        break
+
+                if new_exe:
+                    # Create update script to replace exe after exit
+                    update_script = temp_dir / "update.bat" if sys.platform == "win32" else temp_dir / "update.sh"
+
+                    if sys.platform == "win32":
+                        script_content = f'''@echo off
+timeout /t 2 /nobreak >nul
+copy /Y "{new_exe}" "{current_exe}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+                    else:
+                        script_content = f'''#!/bin/bash
+sleep 2
+cp -f "{new_exe}" "{current_exe}"
+chmod +x "{current_exe}"
+"{current_exe}" &
+rm "$0"
+'''
+
+                    with open(update_script, "w") as f:
+                        f.write(script_content)
+
+                    if sys.platform != "win32":
+                        os.chmod(update_script, 0o755)
+
+                    _auto_update_info = {"script": str(update_script), "version": remote_version}
+                    console.print(f"[{COLORS['success']}]Update ready! Restart to apply v{remote_version}[/]")
+                    return True
+            else:
+                # For source: update version.json
+                for item in extract_dir.rglob("version.json"):
+                    static_api_dir = current_exe / "static-api"
+                    if static_api_dir.exists():
+                        shutil.copy(item, static_api_dir / "version.json")
+
+                console.print(f"[{COLORS['success']}]Updated to v{remote_version}![/]")
+                return False
+
+        elif ext == ".exe":
+            # Direct exe download
+            if getattr(sys, 'frozen', False):
+                update_script = temp_dir / "update.bat"
+                script_content = f'''@echo off
+timeout /t 2 /nobreak >nul
+copy /Y "{download_path}" "{current_exe}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+                with open(update_script, "w") as f:
+                    f.write(script_content)
+
+                _auto_update_info = {"script": str(update_script), "version": remote_version}
+                console.print(f"[{COLORS['success']}]Update ready! Restart to apply v{remote_version}[/]")
+                return True
+
+    except Exception as e:
+        console.print(f"[{COLORS['error']}]Update failed: {str(e)}[/]")
+        return False
+    finally:
+        # Cleanup temp files (except update script if needed)
+        if _auto_update_info is None:
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    return False
+
+def apply_update_on_exit():
+    """Run the update script on exit if an update was downloaded"""
+    global _auto_update_info
+    if _auto_update_info and "script" in _auto_update_info:
+        script = _auto_update_info["script"]
+        if os.path.exists(script):
+            if sys.platform == "win32":
+                subprocess.Popen(["cmd", "/c", script], creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                subprocess.Popen(["bash", script])
+
+def check_and_prompt_update() -> bool:
+    """Check for updates and prompt user if available. Returns True if user wants to update."""
+    if not _update_available:
+        return False
+
+    local_version = get_version()
+    console.print(
+        f"\n[{COLORS['warning']}]╔══════════════════════════════════════════════╗[/]"
+    )
+    console.print(
+        f"[{COLORS['warning']}]║[/]  [bold]Update available![/] v{local_version} -> v{_update_available}       [{COLORS['warning']}]║[/]"
+    )
+    console.print(
+        f"[{COLORS['warning']}]╚══════════════════════════════════════════════╝[/]\n"
+    )
+
+    console.print(f"[{COLORS['primary']}]Would you like to update now? (y/n):[/] ", end="")
+
+    try:
+        response = input().strip().lower()
+        if response in ["y", "yes", "s", "si"]:
+            return perform_auto_update()
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Input Handler with Queue Support
@@ -301,9 +580,10 @@ def main():
     show_status(agent.model_key)
     console.print()
 
-    # Show update notification if available (version check runs in background)
+    # Check for updates and prompt user (version check runs in background)
     time.sleep(0.3)  # Small delay to allow version check to complete
-    show_update_notification()
+    if check_and_prompt_update():
+        console.print(f"\n[{COLORS['muted']}]Update will be applied after restart.[/]\n")
 
     while True:
         try:
@@ -376,6 +656,9 @@ def main():
     # Cleanup
     async_input.stop()
     memory.close()
+
+    # Apply update if downloaded
+    apply_update_on_exit()
 
 
 if __name__ == "__main__": main()

@@ -4,6 +4,7 @@ Handles all slash commands and their execution
 """
 
 import os
+import webbrowser
 from typing import Optional, Tuple, Any
 
 from rich.console import Console
@@ -34,6 +35,34 @@ from .ui import (
     display_error,
     display_info
 )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Provider API Key URLs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PROVIDER_API_KEY_URLS = {
+    "groq": {
+        "name": "Groq",
+        "url": "https://console.groq.com/keys",
+        "description": "Fast inference API for LLMs"
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "url": "https://openrouter.ai/keys",
+        "description": "Access to multiple AI models"
+    },
+    "anthropic": {
+        "name": "Anthropic",
+        "url": "https://console.anthropic.com/settings/keys",
+        "description": "Claude models API"
+    },
+    "openai": {
+        "name": "OpenAI",
+        "url": "https://platform.openai.com/api-keys",
+        "description": "GPT models API"
+    }
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -149,6 +178,12 @@ class CommandHandler:
                 console.print(f"  [bold]Remote version:[/] [{COLORS['error']}]Could not fetch[/]              ")
 
             console.print()
+            return True, None
+
+        elif name == "update":
+            from .main import perform_auto_update
+            if perform_auto_update():
+                console.print(f"\n[{COLORS['warning']}]Please restart Dymo Code to apply the update.[/]\n")
             return True, None
 
         elif name == "clear":
@@ -435,6 +470,58 @@ class CommandHandler:
             if key_name in os.environ:
                 del os.environ[key_name]
             display_success(f"API key for {provider.upper()} deleted")
+            return True, None
+
+        elif name == "getapikey":
+            valid_providers = list(PROVIDER_API_KEY_URLS.keys())
+
+            if not args:
+                # Show all providers with their URLs
+                console.print(f"\n[bold {COLORS['secondary']}]Available Providers[/]\n")
+                for provider, info in PROVIDER_API_KEY_URLS.items():
+                    console.print(f"  [{COLORS['accent']}]{provider}[/] - {info['description']}")
+                    console.print(f"    [{COLORS['muted']}]{info['url']}[/]")
+                console.print(f"\n[{COLORS['muted']}]Usage: /getapikey <provider>[/]\n")
+                return True, None
+
+            provider = args.strip().lower()
+            if provider not in valid_providers:
+                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+                return True, None
+
+            provider_info = PROVIDER_API_KEY_URLS[provider]
+
+            # Show provider info
+            console.print(f"\n[bold {COLORS['secondary']}]{provider_info['name']} API Key[/]\n")
+            console.print(f"  [{COLORS['muted']}]{provider_info['description']}[/]")
+            console.print(f"  URL: [{COLORS['accent']}]{provider_info['url']}[/]\n")
+
+            # Ask to open browser
+            console.print(f"[{COLORS['primary']}]Press Enter to open the URL in your browser, or Ctrl+C to cancel[/]")
+
+            try:
+                input()
+                webbrowser.open(provider_info['url'])
+                console.print(f"[{COLORS['success']}]Browser opened![/]\n")
+
+                # Wait for API key input
+                console.print(f"[{COLORS['primary']}]Paste your API key below (Ctrl+C to cancel):[/]")
+                console.print(f"[{COLORS['muted']}]Your key will be saved securely[/]\n")
+
+                api_key = input(f"  {provider_info['name']} API Key: ").strip()
+
+                if api_key:
+                    user_config.set_api_key(provider, api_key)
+                    os.environ[f"{provider.upper()}_API_KEY"] = api_key
+                    display_success(f"API key for {provider.upper()} saved successfully!")
+                else:
+                    display_info("No API key provided. Operation cancelled.")
+
+            except KeyboardInterrupt:
+                console.print(f"\n[{COLORS['muted']}]Cancelled.[/]\n")
+            except EOFError:
+                console.print(f"\n[{COLORS['muted']}]Cancelled.[/]\n")
+
             return True, None
 
         # ═══════════════════════════════════════════════════════════════════════

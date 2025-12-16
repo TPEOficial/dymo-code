@@ -56,6 +56,12 @@ COMMANDS: Dict[str, Command] = {
         usage="/version",
         aliases=["v"]
     ),
+    "update": Command(
+        name="update",
+        description="Check and install updates",
+        category=CommandCategory.GENERAL,
+        usage="/update"
+    ),
     "exit": Command(
         name="exit",
         description="Exit the agent",
@@ -209,6 +215,14 @@ COMMANDS: Dict[str, Command] = {
         description="Delete an API key",
         category=CommandCategory.PROVIDERS,
         usage="/delapikey <provider>",
+        has_args=True,
+        arg_hint="provider"
+    ),
+    "getapikey": Command(
+        name="getapikey",
+        description="Get API key for a provider (interactive)",
+        category=CommandCategory.PROVIDERS,
+        usage="/getapikey <provider>",
         has_args=True,
         arg_hint="provider"
     ),
