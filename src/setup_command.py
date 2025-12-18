@@ -21,34 +21,22 @@ console = Console(force_terminal=True)
 
 def get_platform() -> str:
     """Get the current platform"""
-    if sys.platform == "win32":
-        return "windows"
-    elif sys.platform == "darwin":
-        return "macos"
-    else:
-        return "linux"
-
+    if sys.platform == "win32": return "windows"
+    elif sys.platform == "darwin": return "macos"
+    else: return "linux"
 
 def is_admin() -> bool:
     """Check if running with admin/root privileges"""
     if sys.platform == "win32":
-        try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except:
-            return False
-    else:
-        return os.geteuid() == 0
+        try: return ctypes.windll.shell32.IsUserAnAdmin()
+        except: return False
+    else: return os.geteuid() == 0
 
 
 def get_executable_path() -> Path:
     """Get the path to the current executable"""
-    if getattr(sys, 'frozen', False):
-        # Running as compiled executable
-        return Path(sys.executable)
-    else:
-        # Running as script - return the main.py path
-        return Path(__file__).parent / "main.py"
-
+    if getattr(sys, 'frozen', False): return Path(sys.executable)
+    else: return Path(__file__).parent / "main.py"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Windows Setup
@@ -76,9 +64,7 @@ def setup_windows() -> Tuple[bool, str]:
         # Create batch file
         bat_path = bin_dir / "dymo-code.bat"
 
-        if getattr(sys, 'frozen', False):
-            # For compiled exe
-            bat_content = f'@echo off\n"{exe_path}" %*'
+        if getattr(sys, 'frozen', False): bat_content = f'@echo off\n"{exe_path}" %*'
         else:
             # For Python script
             python_exe = sys.executable
@@ -103,10 +89,8 @@ def setup_windows() -> Tuple[bool, str]:
                 winreg.KEY_READ | winreg.KEY_WRITE
             )
 
-            try:
-                current_path, _ = winreg.QueryValueEx(key, "PATH")
-            except WindowsError:
-                current_path = ""
+            try: current_path, _ = winreg.QueryValueEx(key, "PATH")
+            except WindowsError: current_path = ""
 
             # Check if already in PATH
             path_entries = [p.strip() for p in current_path.split(';') if p.strip()]
@@ -148,10 +132,8 @@ def setup_windows() -> Tuple[bool, str]:
                 shell=True,
                 text=True
             )
-            if result.returncode == 0:
-                return True, f"Command 'dymo-code' installed. Restart terminal to use."
-            else:
-                return False, f"Could not update PATH. Add '{bin_dir_str}' to PATH manually."
+            if result.returncode == 0: return True, f"Command 'dymo-code' installed. Restart terminal to use."
+            else: return False, f"Could not update PATH. Add '{bin_dir_str}' to PATH manually."
 
     except Exception as e:
         return False, f"Setup failed: {str(e)}"
@@ -180,9 +162,7 @@ def setup_macos() -> Tuple[bool, str]:
         system_bin = Path("/usr/local/bin")
         link_path = system_bin / "dymo-code"
 
-        if system_bin.exists() and os.access(system_bin, os.W_OK):
-            # Can write to /usr/local/bin
-            return _create_symlink_or_script(exe_path, link_path)
+        if system_bin.exists() and os.access(system_bin, os.W_OK): return _create_symlink_or_script(exe_path, link_path)
 
         # Fall back to ~/bin
         user_bin = home / "bin"
@@ -195,12 +175,10 @@ def setup_macos() -> Tuple[bool, str]:
             # Add ~/bin to PATH in shell profile
             shell = os.environ.get('SHELL', '/bin/bash')
 
-            if 'zsh' in shell:
-                profile = home / ".zshrc"
+            if 'zsh' in shell: profile = home / ".zshrc"
             else:
                 profile = home / ".bash_profile"
-                if not profile.exists():
-                    profile = home / ".bashrc"
+                if not profile.exists(): profile = home / ".bashrc"
 
             path_line = f'\nexport PATH="$HOME/bin:$PATH"\n'
 
@@ -218,9 +196,7 @@ def setup_macos() -> Tuple[bool, str]:
 
         return success, msg
 
-    except Exception as e:
-        return False, f"Setup failed: {str(e)}"
-
+    except Exception as e: return False, f"Setup failed: {str(e)}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Linux Setup
@@ -264,17 +240,12 @@ def setup_linux() -> Tuple[bool, str]:
                 # Add to shell profile
                 shell = os.environ.get('SHELL', '/bin/bash')
 
-                if 'zsh' in shell:
-                    profile = home / ".zshrc"
-                elif 'fish' in shell:
-                    profile = home / ".config" / "fish" / "config.fish"
-                else:
-                    profile = home / ".bashrc"
+                if 'zsh' in shell: profile = home / ".zshrc"
+                elif 'fish' in shell: profile = home / ".config" / "fish" / "config.fish"
+                else: profile = home / ".bashrc"
 
-                if 'fish' in shell:
-                    path_line = f'\nset -gx PATH $HOME/.local/bin $PATH\n'
-                else:
-                    path_line = f'\nexport PATH="$HOME/.local/bin:$PATH"\n'
+                if 'fish' in shell: path_line = f'\nset -gx PATH $HOME/.local/bin $PATH\n'
+                else: path_line = f'\nexport PATH="$HOME/.local/bin:$PATH"\n'
 
                 if profile.exists():
                     content = profile.read_text()
@@ -291,9 +262,7 @@ def setup_linux() -> Tuple[bool, str]:
 
         return success, msg
 
-    except Exception as e:
-        return False, f"Setup failed: {str(e)}"
-
+    except Exception as e: return False, f"Setup failed: {str(e)}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -311,16 +280,13 @@ def _create_symlink_or_script(exe_path: Path, link_path: Path) -> Tuple[bool, st
             try:
                 link_path.symlink_to(exe_path)
                 return True, f"Command 'dymo-code' installed."
-            except OSError:
-                # Symlink failed, create wrapper script
-                pass
+            except OSError: pass
 
         # Create wrapper script
         if sys.platform == "win32":
             script_content = f'@echo off\n"{exe_path}" %*'
         else:
-            if getattr(sys, 'frozen', False):
-                script_content = f'#!/bin/bash\nexec "{exe_path}" "$@"'
+            if getattr(sys, 'frozen', False): script_content = f'#!/bin/bash\nexec "{exe_path}" "$@"'
             else:
                 python_exe = sys.executable
                 script_content = f'#!/bin/bash\nexec "{python_exe}" "{exe_path}" "$@"'
@@ -333,11 +299,8 @@ def _create_symlink_or_script(exe_path: Path, link_path: Path) -> Tuple[bool, st
 
         return True, f"Command 'dymo-code' installed."
 
-    except PermissionError:
-        return False, f"Permission denied. Run with sudo or as admin."
-    except Exception as e:
-        return False, f"Could not create command: {str(e)}"
-
+    except PermissionError: return False, f"Permission denied. Run with sudo or as admin."
+    except Exception as e: return False, f"Could not create command: {str(e)}"
 
 def is_command_available() -> bool:
     """Check if dymo-code command is already available in PATH"""
@@ -354,8 +317,7 @@ def is_command_available() -> bool:
                 capture_output=True
             )
         return result.returncode == 0
-    except:
-        return False
+    except: return False
 
 
 def get_install_location() -> Optional[str]:
@@ -375,12 +337,9 @@ def get_install_location() -> Optional[str]:
                 text=True
             )
 
-        if result.returncode == 0:
-            return result.stdout.strip().split('\n')[0]
-    except:
-        pass
+        if result.returncode == 0: return result.stdout.strip().split('\n')[0]
+    except: pass
     return None
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main Setup Function
@@ -402,30 +361,21 @@ def setup_command(show_output: bool = True) -> Tuple[bool, str]:
     if is_command_available():
         location = get_install_location()
         msg = f"Command 'dymo-code' is already available"
-        if location:
-            msg += f" at {location}"
-        if show_output:
-            console.print(f"[green]{msg}[/]")
+        if location: msg += f" at {location}"
+        if show_output: console.print(f"[green]{msg}[/]")
         return True, msg
 
     if show_output:
         console.print(f"[cyan]Setting up 'dymo-code' command for {platform}...[/]")
 
-    if platform == "windows":
-        success, msg = setup_windows()
-    elif platform == "macos":
-        success, msg = setup_macos()
-    else:
-        success, msg = setup_linux()
+    if platform == "windows": success, msg = setup_windows()
+    elif platform == "macos": success, msg = setup_macos()
+    else: success, msg = setup_linux()
 
     if show_output:
-        if success:
-            console.print(f"[green]{msg}[/]")
-        else:
-            console.print(f"[red]{msg}[/]")
-
+        if success: console.print(f"[green]{msg}[/]")
+        else: console.print(f"[red]{msg}[/]")
     return success, msg
-
 
 def uninstall_command() -> Tuple[bool, str]:
     """Remove the dymo-code command"""
@@ -437,9 +387,7 @@ def uninstall_command() -> Tuple[bool, str]:
                 path.unlink()
                 return True, f"Removed {location}"
         return True, "Command was not installed"
-    except Exception as e:
-        return False, f"Could not remove: {str(e)}"
-
+    except Exception as e: return False, f"Could not remove: {str(e)}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLI Interface
@@ -455,10 +403,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.check:
-        if is_command_available():
-            print(f"dymo-code is available at: {get_install_location()}")
-        else:
-            print("dymo-code is not installed")
+        if is_command_available(): print(f"dymo-code is available at: {get_install_location()}")
+        else: print("dymo-code is not installed")
     elif args.uninstall:
         success, msg = uninstall_command()
         print(msg)
