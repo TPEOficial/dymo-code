@@ -214,6 +214,14 @@ def run_command(command: str = "") -> str:
     """Execute a shell command and return output"""
     if not command: return "Error: command is required"
 
+    # Check command permissions before executing
+    try:
+        from .command_permissions import check_and_request_permission
+        if not check_and_request_permission(command):
+            return "Error: Command execution denied by user."
+    except ImportError:
+        pass  # If module not available, allow execution
+
     try:
         result = subprocess.run(
             command,

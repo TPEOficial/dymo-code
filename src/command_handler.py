@@ -137,6 +137,27 @@ class CommandHandler:
             if user_input.strip() == "/":
                 print_enhanced_help()
                 return True, None
+
+            # Check if it looks like a command (starts with /)
+            if user_input.strip().startswith("/"):
+                # Extract the attempted command name
+                parts = user_input.strip()[1:].split(maxsplit=1)
+                if parts:
+                    attempted_cmd = parts[0]
+                    from .commands import get_similar_commands
+                    suggestions = get_similar_commands(attempted_cmd)
+
+                    display_error(f"Unknown command: /{attempted_cmd}")
+                    if suggestions:
+                        if len(suggestions) == 1:
+                            console.print(f"[{COLORS['muted']}]  Did you mean: [bold]/{suggestions[0]}[/bold]?[/]")
+                        else:
+                            formatted = ", ".join([f"[bold]/{s}[/bold]" for s in suggestions])
+                            console.print(f"[{COLORS['muted']}]  Did you mean: {formatted}?[/]")
+                    else:
+                        console.print(f"[{COLORS['muted']}]  Type [bold]/[/bold] to see available commands.[/]")
+                    return True, None
+
             return False, None
 
         # Execute the command
@@ -1056,6 +1077,58 @@ class CommandHandler:
                 display_error("Setup module not available.")
             return True, None
 
+        elif name == "permissions":
+            try:
+                from .command_permissions import command_permissions
+
+                action = args.strip().lower() if args else ""
+
+                if action == "list":
+                    # List all permanent permissions
+                    perms = command_permissions.get_all_permanent_permissions()
+                    if perms:
+                        console.print(f"\n[bold {COLORS['secondary']}]Permanent Command Permissions[/]\n")
+                        for cmd, status in sorted(perms.items()):
+                            icon = "✓" if status == "allow" else "✗"
+                            color = COLORS['success'] if status == "allow" else COLORS['error']
+                            console.print(f"  [{color}]{icon}[/] {cmd} - [{color}]{status}[/]")
+                        console.print()
+                    else:
+                        display_info("No permanent command permissions configured.")
+
+                elif action == "clear":
+                    command_permissions.clear_all_permissions()
+                    display_success("All command permissions cleared.")
+
+                elif action == "toggle":
+                    enabled = command_permissions.is_enabled()
+                    command_permissions.set_enabled(not enabled)
+                    if not enabled:
+                        display_success("Command permission system enabled.")
+                    else:
+                        display_info("Command permission system disabled. Commands will execute without prompts.")
+
+                else:
+                    # Show current status
+                    enabled = command_permissions.is_enabled()
+                    perms = command_permissions.get_all_permanent_permissions()
+                    status = "enabled" if enabled else "disabled"
+                    status_color = COLORS['success'] if enabled else COLORS['muted']
+
+                    console.print(f"\n[bold {COLORS['secondary']}]Command Permission System[/]\n")
+                    console.print(f"  Status: [{status_color}]{status}[/]")
+                    console.print(f"  Permanent permissions: {len(perms)}")
+                    console.print()
+                    console.print(f"[{COLORS['muted']}]Usage:[/]")
+                    console.print(f"  /permissions list   - Show all permanent permissions")
+                    console.print(f"  /permissions clear  - Clear all permissions")
+                    console.print(f"  /permissions toggle - Enable/disable permission prompts")
+                    console.print()
+
+            except ImportError:
+                display_error("Command permissions module not available.")
+            return True, None
+
         # ═══════════════════════════════════════════════════════════════════════
         # Multi-Agent Commands
         # ═══════════════════════════════════════════════════════════════════════
@@ -1109,6 +1182,19 @@ class CommandHandler:
                 display_error("Multi-agent system not available.")
             return True, None
 
-        # Unknown command
-        display_error(f"Unknown command: /{command.name}")
+        # Unknown command - try to suggest similar commands
+        from .commands import get_similar_commands
+
+        suggestions = get_similar_commands(command.name)
+        if suggestions:
+            display_error(f"Unknown command: /{command.name}")
+            if len(suggestions) == 1:
+                console.print(f"[{COLORS['muted']}]  Did you mean: [bold]/{suggestions[0]}[/bold]?[/]")
+            else:
+                formatted = ", ".join([f"[bold]/{s}[/bold]" for s in suggestions])
+                console.print(f"[{COLORS['muted']}]  Did you mean: {formatted}?[/]")
+        else:
+            display_error(f"Unknown command: /{command.name}")
+            console.print(f"[{COLORS['muted']}]  Type [bold]/[/bold] to see available commands.[/]")
+
         return True, None

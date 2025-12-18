@@ -44,11 +44,12 @@ from src.toast import toast_manager
 from src.setup_command import setup_command, is_command_available
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Version Check
+# Version Check & Auto-Setup (Parallel Initialization)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 VERSION_CHECK_URL = "https://github.com/TPEOficial/dymo-code/raw/refs/heads/main/static-api/version.json"
 _update_available: Optional[str] = None
+_setup_result: Optional[tuple] = None  # (success, message)
 
 def get_version() -> str:
     """Get the current version of Dymo Code"""
@@ -120,6 +121,54 @@ def start_version_check():
     """Start version check in background thread"""
     thread = threading.Thread(target=_check_for_updates, daemon=True)
     thread.start()
+
+
+def _auto_setup_command():
+    """Run setup command in background if not already configured"""
+    global _setup_result
+    try:
+        if not is_command_available():
+            success, msg = setup_command(show_output=False)
+            _setup_result = (success, msg)
+        else:
+            _setup_result = (True, "Command already available")
+    except Exception as e:
+        _setup_result = (False, str(e))
+
+
+def start_auto_setup():
+    """Start auto-setup in background thread"""
+    thread = threading.Thread(target=_auto_setup_command, daemon=True)
+    thread.start()
+
+
+def start_parallel_initialization():
+    """
+    Start all background initialization tasks in parallel.
+    This includes:
+    - Version check (fetches remote version for update notification)
+    - Auto-setup (configures dymo-code command if not available)
+    """
+    threads = []
+
+    # Version check thread
+    version_thread = threading.Thread(target=_check_for_updates, daemon=True, name="version_check")
+    threads.append(version_thread)
+
+    # Auto-setup thread
+    setup_thread = threading.Thread(target=_auto_setup_command, daemon=True, name="auto_setup")
+    threads.append(setup_thread)
+
+    # Start all threads
+    for thread in threads:
+        thread.start()
+
+    return threads
+
+
+def get_setup_result() -> Optional[tuple]:
+    """Get the result of auto-setup (success, message) or None if not completed"""
+    return _setup_result
 
 def show_update_notification():
     """Show update notification if available"""
@@ -532,8 +581,20 @@ def run_first_time_setup() -> str:
     )
     console.print()
 
-    # Setup command-line access
-    if not is_command_available():
+    # Setup command-line access - check if auto-setup already did it
+    setup_result = get_setup_result()
+    if setup_result:
+        success, msg = setup_result
+        if success and "already" not in msg.lower():
+            console.print(f"[{COLORS['success']}]{msg}[/]")
+            console.print(f"[{COLORS['muted']}]You can now use 'dymo-code' from any terminal.[/]")
+            console.print()
+        elif not success:
+            console.print(f"[{COLORS['warning']}]Could not setup command: {msg}[/]")
+            console.print(f"[{COLORS['muted']}]You can run setup later with /setup[/]")
+            console.print()
+    elif not is_command_available():
+        # Auto-setup didn't run or hasn't finished, do it now
         console.print(f"[{COLORS['secondary']}]Setting up command-line access...[/]")
         success, msg = setup_command(show_output=False)
         if success:
@@ -541,7 +602,7 @@ def run_first_time_setup() -> str:
             console.print(f"[{COLORS['muted']}]You can now use 'dymo-code' from any terminal.[/]")
         else:
             console.print(f"[{COLORS['warning']}]Could not setup command: {msg}[/]")
-            console.print(f"[{COLORS['muted']}]You can run setup later with: python -m src.setup_command[/]")
+            console.print(f"[{COLORS['muted']}]You can run setup later with /setup[/]")
         console.print()
 
     return name
@@ -563,8 +624,9 @@ def main():
     # Start toast notification manager
     toast_manager.start()
 
-    # Start version check in background (non-blocking)
-    start_version_check()
+    # Start parallel background tasks (version check + auto-setup)
+    # This runs in separate threads so it doesn't block startup
+    start_parallel_initialization()
 
     # Load stored API keys into environment
     user_config.load_api_keys_to_env()
@@ -609,8 +671,19 @@ def main():
     show_status(agent.model_key)
     console.print()
 
-    # Check for updates and prompt user (version check runs in background)
-    time.sleep(0.3)  # Small delay to allow version check to complete
+    # Check for background initialization results
+    time.sleep(0.3)  # Small delay to allow background tasks to complete
+
+    # Show setup result if it was performed (not for first-run users, they already saw it)
+    if not user_config.is_first_run:
+        setup_result = get_setup_result()
+        if setup_result:
+            success, msg = setup_result
+            if success and "installed" in msg.lower():
+                console.print(f"[{COLORS['success']}]{msg}[/]")
+                console.print()
+
+    # Check for updates and prompt user
     if check_and_prompt_update():
         console.print(f"\n[{COLORS['muted']}]Update will be applied after restart.[/]\n")
 

@@ -6,6 +6,7 @@ Provides slash commands with real-time autocomplete and visual feedback
 from dataclasses import dataclass
 from typing import List, Optional, Callable, Dict, Any
 from enum import Enum
+from difflib import SequenceMatcher, get_close_matches
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Command Definitions
@@ -402,6 +403,16 @@ COMMANDS: Dict[str, Command] = {
         usage="/setup"
     ),
 
+    # Command Permissions
+    "permissions": Command(
+        name="permissions",
+        description="Manage command execution permissions",
+        category=CommandCategory.SYSTEM,
+        usage="/permissions [clear|list|toggle]",
+        has_args=True,
+        arg_hint="action"
+    ),
+
     # Multi-Agent Commands
     "agents": Command(
         name="agents",
@@ -481,6 +492,65 @@ def get_command(name: str) -> Optional[Command]:
             return cmd
 
     return None
+
+
+def get_similar_commands(typo: str, max_suggestions: int = 3, cutoff: float = 0.5) -> List[str]:
+    """
+    Find commands similar to a typo using fuzzy matching.
+    Uses difflib's SequenceMatcher for Levenshtein-like similarity.
+
+    Args:
+        typo: The mistyped command name
+        max_suggestions: Maximum number of suggestions to return
+        cutoff: Minimum similarity ratio (0.0 to 1.0) to be considered a match
+
+    Returns:
+        List of similar command names, sorted by similarity
+    """
+    typo = typo.lower().lstrip("/")
+
+    # Build list of all valid command names and aliases
+    all_names = []
+    for name, cmd in COMMANDS.items():
+        all_names.append(name)
+        if cmd.aliases:
+            all_names.extend(cmd.aliases)
+
+    # Use get_close_matches for fuzzy matching
+    # This uses SequenceMatcher which implements a variant of Ratcliff/Obershelp algorithm
+    matches = get_close_matches(typo, all_names, n=max_suggestions, cutoff=cutoff)
+
+    # If no matches with default cutoff, try with lower cutoff for very short inputs
+    if not matches and len(typo) <= 3:
+        matches = get_close_matches(typo, all_names, n=max_suggestions, cutoff=0.4)
+
+    # Also check for commands that start with the typo (prefix matching)
+    prefix_matches = [name for name in all_names if name.startswith(typo)]
+
+    # Combine and deduplicate, prioritizing exact prefix matches
+    combined = []
+    for m in prefix_matches:
+        if m not in combined:
+            combined.append(m)
+    for m in matches:
+        if m not in combined:
+            combined.append(m)
+
+    return combined[:max_suggestions]
+
+
+def suggest_command(typo: str) -> Optional[str]:
+    """
+    Suggest the most likely intended command for a typo.
+
+    Args:
+        typo: The mistyped command name
+
+    Returns:
+        The best matching command name, or None if no good match found
+    """
+    suggestions = get_similar_commands(typo, max_suggestions=1, cutoff=0.6)
+    return suggestions[0] if suggestions else None
 
 
 def parse_command(input_text: str) -> tuple[Optional[Command], str]:

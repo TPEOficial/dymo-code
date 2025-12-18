@@ -48,7 +48,8 @@ def setup_windows() -> Tuple[bool, str]:
 
     Strategy:
     1. Create a batch file wrapper in %LOCALAPPDATA%\Dymo-Code\bin
-    2. Add that directory to user PATH
+    2. Add that directory to user PATH using Registry
+    3. Broadcast the environment change to all windows
 
     Returns:
         (success, message)
@@ -64,11 +65,18 @@ def setup_windows() -> Tuple[bool, str]:
         # Create batch file
         bat_path = bin_dir / "dymo-code.bat"
 
-        if getattr(sys, 'frozen', False): bat_content = f'@echo off\n"{exe_path}" %*'
+        if getattr(sys, 'frozen', False):
+            bat_content = f'@echo off\n"{exe_path}" %*'
         else:
-            # For Python script
+            # For Python script - use the run.py in the project root
             python_exe = sys.executable
-            bat_content = f'@echo off\n"{python_exe}" "{exe_path}" %*'
+            # Navigate to project root (parent of src directory)
+            project_root = Path(__file__).parent.parent
+            run_script = project_root / "run.py"
+            if run_script.exists():
+                bat_content = f'@echo off\n"{python_exe}" "{run_script}" %*'
+            else:
+                bat_content = f'@echo off\n"{python_exe}" "{exe_path}" %*'
 
         bat_path.write_text(bat_content, encoding='utf-8')
 
@@ -78,10 +86,13 @@ def setup_windows() -> Tuple[bool, str]:
 
         # Add to PATH if not already there
         bin_dir_str = str(bin_dir)
+        path_added = False
 
-        # Get current user PATH
+        # Get current user PATH using Registry
         try:
             import winreg
+
+            # Open registry key for user environment
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Environment",
@@ -89,54 +100,139 @@ def setup_windows() -> Tuple[bool, str]:
                 winreg.KEY_READ | winreg.KEY_WRITE
             )
 
-            try: current_path, _ = winreg.QueryValueEx(key, "PATH")
-            except WindowsError: current_path = ""
+            try:
+                current_path, reg_type = winreg.QueryValueEx(key, "PATH")
+            except FileNotFoundError:
+                current_path = ""
+                reg_type = winreg.REG_EXPAND_SZ
 
-            # Check if already in PATH
+            # Check if already in PATH (case-insensitive comparison for Windows)
             path_entries = [p.strip() for p in current_path.split(';') if p.strip()]
+            path_lower = [p.lower() for p in path_entries]
 
-            if bin_dir_str.lower() not in [p.lower() for p in path_entries]:
+            if bin_dir_str.lower() not in path_lower:
                 # Add to PATH
-                new_path = f"{current_path};{bin_dir_str}" if current_path else bin_dir_str
+                if current_path:
+                    # Remove any trailing semicolons and add our path
+                    new_path = current_path.rstrip(';') + ';' + bin_dir_str
+                else:
+                    new_path = bin_dir_str
+
+                # Use REG_EXPAND_SZ to preserve %VARIABLES%
                 winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
+                path_added = True
 
-                # Broadcast environment change
-                try:
-                    import win32con
-                    import win32gui
-                    win32gui.SendMessage(
-                        win32con.HWND_BROADCAST,
-                        win32con.WM_SETTINGCHANGE,
-                        0,
-                        "Environment"
-                    )
-                except ImportError:
-                    # pywin32 not available, use alternative method
-                    subprocess.run(
-                        ['setx', 'PATH', new_path],
-                        capture_output=True,
-                        shell=True
-                    )
+            winreg.CloseKey(key)
 
-                winreg.CloseKey(key)
-                return True, f"Command 'dymo-code' installed. Restart terminal to use."
+            # Broadcast environment change to all windows
+            _broadcast_environment_change()
+
+            if path_added:
+                return True, f"Command 'dymo-code' installed at {bin_dir_str}. Restart terminal to use."
             else:
-                winreg.CloseKey(key)
-                return True, "Command 'dymo-code' is already available."
+                return True, "Command 'dymo-code' is already configured."
 
         except ImportError:
-            # No winreg, use setx command
-            result = subprocess.run(
-                f'setx PATH "%PATH%;{bin_dir_str}"',
-                capture_output=True,
-                shell=True,
-                text=True
-            )
-            if result.returncode == 0: return True, f"Command 'dymo-code' installed. Restart terminal to use."
-            else: return False, f"Could not update PATH. Add '{bin_dir_str}' to PATH manually."
+            # winreg not available (shouldn't happen on Windows)
+            # Fall back to setx but get current PATH properly
+            try:
+                # Get current user PATH from environment
+                result = subprocess.run(
+                    'reg query "HKEY_CURRENT_USER\\Environment" /v PATH',
+                    capture_output=True,
+                    shell=True,
+                    text=True
+                )
+
+                current_path = ""
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')
+                    for line in lines:
+                        if 'PATH' in line.upper() and 'REG_' in line.upper():
+                            parts = line.split('REG_', 1)
+                            if len(parts) > 1:
+                                # Skip the type (EXPAND_SZ, SZ, etc.) and get the value
+                                value_part = parts[1].split(None, 1)
+                                if len(value_part) > 1:
+                                    current_path = value_part[1].strip()
+                                break
+
+                # Check if already in PATH
+                if bin_dir_str.lower() in current_path.lower():
+                    return True, "Command 'dymo-code' is already configured."
+
+                # Create new PATH
+                if current_path:
+                    new_path = current_path.rstrip(';') + ';' + bin_dir_str
+                else:
+                    new_path = bin_dir_str
+
+                # Use setx to set the new PATH (max 1024 chars for setx)
+                if len(new_path) > 1024:
+                    return False, f"PATH too long. Add '{bin_dir_str}' to PATH manually."
+
+                result = subprocess.run(
+                    ['setx', 'PATH', new_path],
+                    capture_output=True,
+                    text=True
+                )
+
+                if result.returncode == 0:
+                    return True, f"Command 'dymo-code' installed. Restart terminal to use."
+                else:
+                    return False, f"Could not update PATH. Add '{bin_dir_str}' to PATH manually."
+
+            except Exception as e:
+                return False, f"Could not update PATH: {str(e)}. Add '{bin_dir_str}' to PATH manually."
 
     except Exception as e:
         return False, f"Setup failed: {str(e)}"
+
+
+def _broadcast_environment_change():
+    """Broadcast environment change to all Windows applications"""
+    try:
+        # Try using ctypes directly (most reliable)
+        import ctypes
+        from ctypes import wintypes
+
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 0x0002
+
+        SendMessageTimeoutW = ctypes.windll.user32.SendMessageTimeoutW
+        SendMessageTimeoutW.argtypes = [
+            wintypes.HWND, wintypes.UINT, wintypes.WPARAM,
+            wintypes.LPCWSTR, wintypes.UINT, wintypes.UINT,
+            ctypes.POINTER(wintypes.DWORD)
+        ]
+        SendMessageTimeoutW.restype = wintypes.LPARAM
+
+        result = wintypes.DWORD()
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            "Environment",
+            SMTO_ABORTIFHUNG,
+            5000,  # 5 second timeout
+            ctypes.byref(result)
+        )
+    except Exception:
+        # Fallback: try pywin32 if available
+        try:
+            import win32con
+            import win32gui
+            win32gui.SendMessageTimeout(
+                win32con.HWND_BROADCAST,
+                win32con.WM_SETTINGCHANGE,
+                0,
+                "Environment",
+                win32con.SMTO_ABORTIFHUNG,
+                5000
+            )
+        except ImportError:
+            pass  # Can't broadcast, user will need to restart terminal
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
