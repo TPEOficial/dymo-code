@@ -72,6 +72,7 @@ $ python run.py
 | Multi-Key Pool System             | Active              |   ✅   |
 | Theme system                      | Active              |   ✅   |
 | Search engine with bypass         | Active              |   ✅   |
+| Command Permission System         | Active              |   ✅   |
 
 ### Supported AI Models
 
