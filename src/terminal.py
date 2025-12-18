@@ -5,9 +5,7 @@ Terminal utilities for Dymo Code
 - Terminal capabilities detection
 """
 
-import os
-import sys
-import platform
+import os, sys
 from typing import Optional
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -172,8 +170,7 @@ class TerminalCapabilities:
             # Try to encode a unicode character
             "✓".encode(sys.stdout.encoding or "utf-8")
             return True
-        except (UnicodeEncodeError, LookupError):
-            return False
+        except (UnicodeEncodeError, LookupError): return False
 
     @staticmethod
     def supports_256_colors() -> bool:
@@ -181,13 +178,9 @@ class TerminalCapabilities:
         term = os.environ.get("TERM", "")
         colorterm = os.environ.get("COLORTERM", "")
 
-        if colorterm in ["truecolor", "24bit"]:
-            return True
-        if "256color" in term:
-            return True
-        if sys.platform == "win32":
-            # Windows 10+ supports 256 colors
-            return True
+        if colorterm in ["truecolor", "24bit"]: return True
+        if "256color" in term: return True
+        if sys.platform == "win32": return True
         return False
 
     @staticmethod
@@ -203,8 +196,7 @@ class TerminalCapabilities:
             import shutil
             size = shutil.get_terminal_size()
             return (size.columns, size.lines)
-        except Exception:
-            return (80, 24)  # Default fallback
+        except Exception: return (80, 24)  # Default fallback
 
     @staticmethod
     def is_interactive() -> bool:
@@ -218,8 +210,7 @@ class TerminalCapabilities:
 
 def clear_screen():
     """Clear the terminal screen"""
-    if sys.platform == "win32":
-        os.system("cls")
+    if sys.platform == "win32": os.system("cls")
     else:
         sys.stdout.write("\x1b[2J\x1b[H")
         sys.stdout.flush()
@@ -298,8 +289,7 @@ def copy_to_clipboard_osc52(text: str) -> bool:
         sys.stdout.write(f"\x1b]52;c;{encoded}\x07")
         sys.stdout.flush()
         return True
-    except Exception:
-        return False
+    except Exception: return False
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -345,13 +335,10 @@ def copy_to_clipboard(text: str) -> bool:
                 try:
                     process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
                     process.communicate(text.encode())
-                    if process.returncode == 0:
-                        return True
-                except FileNotFoundError:
-                    continue
+                    if process.returncode == 0: return True
+                except FileNotFoundError: continue
 
-    except Exception:
-        pass
+    except Exception: pass
 
     # Fallback to OSC 52
     return copy_to_clipboard_osc52(text)

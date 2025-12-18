@@ -3,9 +3,7 @@ Toast notification system for Dymo Code
 Inspired by OpenCode's toast notifications
 """
 
-import threading
-import time
-import sys
+import threading, time, sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Callable
@@ -16,7 +14,6 @@ from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
 from rich.box import ROUNDED
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Toast Types
