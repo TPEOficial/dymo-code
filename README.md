@@ -62,17 +62,29 @@ $ python run.py
 
 ### Main Features
 
-| Name                              | Status              | Active |
-|-----------------------------------|---------------------|--------|
-| AI Chat                           | In development      |   ✅   |
-| Parallel Multi-Agent	            | Active              |   ✅   |
-| Support for multiple AI providers | In development      |   ⚠️   |
-| Jailbreak Mode                    | In development      |   ⚠️   |
-| MCP Support                       | In BETA Phase       |   ⚠️   |
-| Multi-Key Pool System             | Active              |   ✅   |
-| Theme system                      | Active              |   ✅   |
-| Search engine with bypass         | Active              |   ✅   |
-| Command Permission System         | Active              |   ✅   |
+| Name                               | Status              | Active |
+|------------------------------------|---------------------|--------|
+| AI Chat                            | In development      |   ✅   |
+| Parallel Multi-Agent	             | Active              |   ✅   |
+| Support for multiple AI providers  | In development      |   ⚠️   |
+| Jailbreak Mode                     | In development      |   ⚠️   |
+| MCP Support                        | In BETA Phase       |   ⚠️   |
+| Multi-Key Pool System              | Active              |   ✅   |
+| Theme System                       | Active              |   ✅   |
+| Search engine with bypass          | Active              |   ✅   |
+| Command Permission System          | Active              |   ✅   |
+| Advanced History Management System | Active              |   ✅   |
+
+<details>
+  <summary>Other features</summary>
+  
+| Name                                          | Status              | Active |
+|-----------------------------------------------|---------------------|--------|
+| Command Correction System                     | Active              |   ✅   |
+| Scanning URLs before opening them             | In development      |   ⚠️   |
+| Automatic API Key change when credits run out | Active              |   ✅   |
+
+</details>
 
 ### Supported AI Models
 

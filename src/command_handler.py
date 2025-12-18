@@ -38,32 +38,6 @@ from .ui import (
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Provider API Key URLs
-# ═══════════════════════════════════════════════════════════════════════════════
-
-PROVIDER_API_KEY_URLS = {
-    "groq": {
-        "name": "Groq",
-        "url": "https://console.groq.com/keys",
-        "description": "Fast inference API for LLMs"
-    },
-    "openrouter": {
-        "name": "OpenRouter",
-        "url": "https://openrouter.ai/keys",
-        "description": "Access to multiple AI models"
-    },
-    "anthropic": {
-        "name": "Anthropic",
-        "url": "https://console.anthropic.com/settings/keys",
-        "description": "Claude models API"
-    },
-    "openai": {
-        "name": "OpenAI",
-        "url": "https://platform.openai.com/api-keys",
-        "description": "GPT models API"
-    }
-}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -144,17 +118,33 @@ class CommandHandler:
                 parts = user_input.strip()[1:].split(maxsplit=1)
                 if parts:
                     attempted_cmd = parts[0]
-                    from .commands import get_similar_commands
+                    cmd_args = parts[1] if len(parts) > 1 else ""
+                    from .commands import get_similar_commands, get_command
+                    from difflib import SequenceMatcher
+
                     suggestions = get_similar_commands(attempted_cmd)
 
-                    display_error(f"Unknown command: /{attempted_cmd}")
                     if suggestions:
+                        # Check if the best match is very similar (likely a typo)
+                        best_match = suggestions[0]
+                        similarity = SequenceMatcher(None, attempted_cmd.lower(), best_match.lower()).ratio()
+
+                        # If similarity is high (> 0.7), auto-correct and execute
+                        if similarity > 0.7:
+                            console.print(f"[{COLORS['muted']}]  Auto-correcting: /{attempted_cmd} → /{best_match}[/]")
+                            corrected_cmd = get_command(best_match)
+                            if corrected_cmd:
+                                return self._execute_command(corrected_cmd, cmd_args)
+
+                        # Otherwise show suggestions
+                        display_error(f"Unknown command: /{attempted_cmd}")
                         if len(suggestions) == 1:
                             console.print(f"[{COLORS['muted']}]  Did you mean: [bold]/{suggestions[0]}[/bold]?[/]")
                         else:
                             formatted = ", ".join([f"[bold]/{s}[/bold]" for s in suggestions])
                             console.print(f"[{COLORS['muted']}]  Did you mean: {formatted}?[/]")
                     else:
+                        display_error(f"Unknown command: /{attempted_cmd}")
                         console.print(f"[{COLORS['muted']}]  Type [bold]/[/bold] to see available commands.[/]")
                     return True, None
 
@@ -493,9 +483,11 @@ class CommandHandler:
         # ═══════════════════════════════════════════════════════════════════════
 
         elif name == "setapikey":
+            from .lib.providers import API_KEY_PROVIDERS, get_providers_string, is_valid_provider
+
             if not args:
                 display_error("Usage: /setapikey <provider> <key>")
-                console.print(f"[{COLORS['muted']}]Providers: groq, openrouter, anthropic, openai[/]")
+                console.print(f"[{COLORS['muted']}]Providers: {get_providers_string()}[/]")
                 console.print(f"[{COLORS['muted']}]You can add multiple keys per provider for auto-rotation[/]")
                 return True, None
 
@@ -507,16 +499,14 @@ class CommandHandler:
             provider = parts[0].lower()
             api_key = parts[1].strip()
 
-            valid_providers = ["groq", "openrouter", "anthropic", "openai"]
-            if provider not in valid_providers:
-                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+            if not is_valid_provider(provider):
+                display_error(f"Invalid provider. Use: {get_providers_string()}")
                 return True, None
 
             # Add key to the pool (supports multiple keys)
             added = user_config.add_api_key(provider, api_key)
             if added:
                 # Also set in current environment so it takes effect immediately
-                import os
                 os.environ[f"{provider.upper()}_API_KEY"] = api_key
                 # Update the API key manager
                 from .api_key_manager import api_key_manager
@@ -578,12 +568,13 @@ class CommandHandler:
                 console.print(f"[{COLORS['muted']}]Use /apikeys to see key indices[/]")
                 return True, None
 
+            from .lib.providers import get_providers_string, is_valid_provider
+
             parts = args.strip().split()
             provider = parts[0].lower()
-            valid_providers = ["groq", "openrouter", "anthropic", "openai"]
 
-            if provider not in valid_providers:
-                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+            if not is_valid_provider(provider):
+                display_error(f"Invalid provider. Use: {get_providers_string()}")
                 return True, None
 
             # Check if index is provided
@@ -594,7 +585,6 @@ class CommandHandler:
                         display_success(f"API key #{index+1} for {provider.upper()} deleted")
                         # Update environment if needed
                         remaining_keys = user_config.get_api_keys_list(provider)
-                        import os
                         key_name = f"{provider.upper()}_API_KEY"
                         if remaining_keys:
                             os.environ[key_name] = remaining_keys[0]
@@ -607,7 +597,6 @@ class CommandHandler:
             else:
                 # No index - delete all keys for provider
                 user_config.delete_api_key(provider)
-                import os
                 key_name = f"{provider.upper()}_API_KEY"
                 if key_name in os.environ:
                     del os.environ[key_name]
@@ -616,47 +605,51 @@ class CommandHandler:
             return True, None
 
         elif name == "getapikey":
-            valid_providers = list(PROVIDER_API_KEY_URLS.keys())
+            from .lib.providers import (
+                API_KEY_PROVIDERS, PROVIDERS, get_provider,
+                get_provider_name, get_provider_url, get_provider_description
+            )
 
             if not args:
                 # Show all providers with their URLs
                 console.print(f"\n[bold {COLORS['secondary']}]Available Providers[/]\n")
-                for provider, info in PROVIDER_API_KEY_URLS.items():
-                    console.print(f"  [{COLORS['accent']}]{provider}[/] - {info['description']}")
-                    console.print(f"    [{COLORS['muted']}]{info['url']}[/]")
+                for provider_id in API_KEY_PROVIDERS:
+                    provider_info = get_provider(provider_id)
+                    console.print(f"  [{COLORS['accent']}]{provider_id}[/] - {provider_info.description}")
+                    console.print(f"    [{COLORS['muted']}]{provider_info.api_key_url}[/]")
                 console.print(f"\n[{COLORS['muted']}]Usage: /getapikey <provider>[/]\n")
                 return True, None
 
             provider = args.strip().lower()
-            if provider not in valid_providers:
-                display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
+            if provider not in API_KEY_PROVIDERS:
+                display_error(f"Invalid provider. Use: {', '.join(API_KEY_PROVIDERS)}")
                 return True, None
 
-            provider_info = PROVIDER_API_KEY_URLS[provider]
+            provider_info = get_provider(provider)
 
             # Show provider info
-            console.print(f"\n[bold {COLORS['secondary']}]{provider_info['name']} API Key[/]\n")
-            console.print(f"  [{COLORS['muted']}]{provider_info['description']}[/]")
-            console.print(f"  URL: [{COLORS['accent']}]{provider_info['url']}[/]\n")
+            console.print(f"\n[bold {COLORS['secondary']}]{provider_info.name} API Key[/]\n")
+            console.print(f"  [{COLORS['muted']}]{provider_info.description}[/]")
+            console.print(f"  URL: [{COLORS['accent']}]{provider_info.api_key_url}[/]\n")
 
             # Ask to open browser
             console.print(f"[{COLORS['primary']}]Press Enter to open the URL in your browser, or Ctrl+C to cancel[/]")
 
             try:
                 input()
-                webbrowser.open(provider_info['url'])
+                webbrowser.open(provider_info.api_key_url)
                 console.print(f"[{COLORS['success']}]Browser opened![/]\n")
 
                 # Wait for API key input
                 console.print(f"[{COLORS['primary']}]Paste your API key below (Ctrl+C to cancel):[/]")
                 console.print(f"[{COLORS['muted']}]Your key will be saved securely[/]\n")
 
-                api_key = input(f"  {provider_info['name']} API Key: ").strip()
+                api_key = input(f"  {provider_info.name} API Key: ").strip()
 
                 if api_key:
                     # Add to multi-key pool
                     added = user_config.add_api_key(provider, api_key)
-                    os.environ[f"{provider.upper()}_API_KEY"] = api_key
+                    os.environ[provider_info.env_key] = api_key
 
                     # Update the API key manager
                     from .api_key_manager import api_key_manager
@@ -664,9 +657,9 @@ class CommandHandler:
 
                     if added:
                         key_count = user_config.get_api_key_count(provider)
-                        display_success(f"API key for {provider.upper()} added (total: {key_count} key{'s' if key_count > 1 else ''})")
+                        display_success(f"API key for {provider_info.name} added (total: {key_count} key{'s' if key_count > 1 else ''})")
                     else:
-                        display_info(f"This API key already exists for {provider.upper()}")
+                        display_info(f"This API key already exists for {provider_info.name}")
                 else:
                     display_info("No API key provided. Operation cancelled.")
 
@@ -705,6 +698,71 @@ class CommandHandler:
                     show_status(self.agent.model_key)
                 else:
                     display_error("Conversation not found.")
+
+            elif name == "history" and args:
+                # Parse subcommands: delete, rename
+                parts = args.strip().split(maxsplit=2)
+                subcommand = parts[0].lower() if parts else ""
+
+                if subcommand == "delete" or subcommand == "del" or subcommand == "rm":
+                    if len(parts) < 2:
+                        display_error("Usage: /history delete <id or number>")
+                        return True, None
+
+                    target = parts[1]
+                    # Check if it's a number
+                    try:
+                        idx = int(target) - 1
+                        conversations = history_manager.get_recent_conversations(30)
+                        if 0 <= idx < len(conversations):
+                            conv_id = conversations[idx].get("id", "")
+                            conv_title = conversations[idx].get("title", "Untitled")
+                        else:
+                            display_error("Invalid conversation number.")
+                            return True, None
+                    except ValueError:
+                        conv_id = target
+                        conv = history_manager.get_conversation(conv_id)
+                        conv_title = conv.get("title", "Untitled") if conv else "Unknown"
+
+                    if history_manager.delete_conversation(conv_id):
+                        display_success(f"Deleted: {conv_title}")
+                    else:
+                        display_error("Conversation not found.")
+
+                elif subcommand == "rename" or subcommand == "mv":
+                    if len(parts) < 3:
+                        display_error("Usage: /history rename <id or number> <new name>")
+                        return True, None
+
+                    target = parts[1]
+                    new_name = parts[2]
+
+                    # Check if it's a number
+                    try:
+                        idx = int(target) - 1
+                        conversations = history_manager.get_recent_conversations(30)
+                        if 0 <= idx < len(conversations):
+                            conv_id = conversations[idx].get("id", "")
+                        else:
+                            display_error("Invalid conversation number.")
+                            return True, None
+                    except ValueError:
+                        conv_id = target
+
+                    if history_manager.rename_conversation(conv_id, new_name):
+                        display_success(f"Renamed to: {new_name}")
+                    else:
+                        display_error("Conversation not found.")
+
+                else:
+                    # Unknown subcommand, show help
+                    console.print(f"\n[bold {COLORS['secondary']}]History Commands[/]\n")
+                    console.print(f"  [bold]/history[/]                    - List recent conversations")
+                    console.print(f"  [bold]/history delete <n>[/]        - Delete conversation by number or ID")
+                    console.print(f"  [bold]/history rename <n> <name>[/] - Rename conversation")
+                    console.print(f"\n[{COLORS['muted']}]Aliases: delete=del=rm, rename=mv[/]\n")
+
             else:
                 # Show conversations
                 conversations = history_manager.get_recent_conversations(10)

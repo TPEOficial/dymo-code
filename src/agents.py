@@ -36,7 +36,6 @@ class AgentStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-
 class AgentType(Enum):
     GENERAL = "general"           # General purpose agent
     CODER = "coder"               # Code generation agent
@@ -44,7 +43,6 @@ class AgentType(Enum):
     RESEARCHER = "researcher"     # Research/web search agent
     FILE_OP = "file_op"           # File operations agent
     SHELL = "shell"               # Shell command execution agent
-
 
 @dataclass
 class AgentTask:
@@ -76,7 +74,6 @@ class AgentTask:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Agent Worker
@@ -187,7 +184,6 @@ NUNCA ejecutes comandos destructivos sin confirmación."""
     def cancel(self):
         """Cancel the current task"""
         self.stop_flag.set()
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Agent Manager
@@ -360,10 +356,8 @@ class AgentManager:
             futures = list(self.task_futures.values())
 
         for future in futures:
-            try:
-                future.result(timeout=timeout)
-            except Exception:
-                pass
+            try: future.result(timeout=timeout)
+            except Exception: pass
 
     def shutdown(self):
         """Shutdown the agent manager"""

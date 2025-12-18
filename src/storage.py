@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
+from .lib.providers import API_KEY_PROVIDERS, get_providers_string
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Cross-Platform Data Directory
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -206,7 +208,7 @@ class UserConfig:
         """
         Set an API key for a provider (legacy single-key method).
         For multi-key support, use add_api_key instead.
-        Provider should be: groq, openrouter, anthropic, openai
+        Valid providers: see API_KEY_PROVIDERS in lib/providers.py
         """
         key_name = f"{provider.upper()}_API_KEY"
         self._api_keys[key_name] = api_key
@@ -351,10 +353,9 @@ class UserConfig:
 
     def get_all_providers_keys_info(self) -> dict:
         """Get information about all configured API keys per provider"""
-        providers = ["groq", "openrouter", "anthropic", "openai"]
         info = {}
 
-        for provider in providers:
+        for provider in API_KEY_PROVIDERS:
             keys = self.get_api_keys_list(provider)
             masked_keys = []
             for key in keys:

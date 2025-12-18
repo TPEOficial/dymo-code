@@ -1,6 +1,6 @@
 """
 AI Client abstraction layer for Dymo Code
-Supports multiple providers: Groq, OpenRouter, Anthropic (Claude), OpenAI, Ollama
+Supports multiple providers: Groq, OpenRouter, Anthropic (Claude), OpenAI, Ollama, Google Gemini
 With automatic API key rotation on rate limits or credit exhaustion
 """
 
@@ -1139,6 +1139,264 @@ class OllamaClient(BaseAIClient):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Google Gemini Client
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GeminiClient(BaseAIClient):
+    """Google Gemini API client with streaming support"""
+
+    PROVIDER = "google"
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+    def __init__(self):
+        self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
+        return os.environ.get("GOOGLE_API_KEY")
+
+    def _get_client(self):
+        current_key = self.api_key
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
+            self._client = httpx.Client(timeout=120.0)
+        return self._client
+
+    def is_available(self) -> bool:
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("GOOGLE_API_KEY"))
+
+    def _convert_messages_to_gemini_format(
+        self,
+        messages: List[Dict[str, Any]]
+    ) -> tuple[Optional[str], List[Dict[str, Any]]]:
+        """Convert OpenAI-style messages to Gemini format"""
+        system_instruction = None
+        contents = []
+
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "system":
+                system_instruction = content
+                continue
+
+            # Map roles
+            gemini_role = "user" if role == "user" else "model"
+
+            # Handle tool results
+            if role == "tool":
+                # Tool results go as user messages with function response
+                tool_call_id = msg.get("tool_call_id", "")
+                contents.append({
+                    "role": "user",
+                    "parts": [{
+                        "functionResponse": {
+                            "name": msg.get("name", tool_call_id),
+                            "response": {"result": content}
+                        }
+                    }]
+                })
+                continue
+
+            # Handle assistant messages with tool calls
+            if role == "assistant" and msg.get("tool_calls"):
+                parts = []
+                if content:
+                    parts.append({"text": content})
+                for tc in msg.get("tool_calls", []):
+                    func = tc.get("function", {})
+                    try:
+                        args = json.loads(func.get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        args = {}
+                    parts.append({
+                        "functionCall": {
+                            "name": func.get("name", ""),
+                            "args": args
+                        }
+                    })
+                contents.append({"role": "model", "parts": parts})
+                continue
+
+            # Regular message
+            if content:
+                contents.append({
+                    "role": gemini_role,
+                    "parts": [{"text": content}]
+                })
+
+        return system_instruction, contents
+
+    def _convert_tools_to_gemini_format(
+        self,
+        tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Convert OpenAI-style tools to Gemini format"""
+        gemini_tools = []
+
+        for tool in tools:
+            if tool.get("type") == "function":
+                func = tool.get("function", {})
+                gemini_func = {
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                }
+
+                # Convert parameters
+                params = func.get("parameters", {})
+                if params:
+                    gemini_func["parameters"] = {
+                        "type": params.get("type", "object"),
+                        "properties": params.get("properties", {}),
+                        "required": params.get("required", [])
+                    }
+
+                gemini_tools.append(gemini_func)
+
+        return [{"functionDeclarations": gemini_tools}] if gemini_tools else []
+
+    def stream_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
+    ) -> Iterator[StreamChunk]:
+        client = self._get_client()
+        api_key = self.api_key
+
+        if not client or not api_key:
+            raise RuntimeError("GOOGLE_API_KEY not set. Use /setapikey google <your-key>")
+
+        # Convert messages
+        system_instruction, contents = self._convert_messages_to_gemini_format(messages)
+
+        # Build request payload
+        payload = {"contents": contents}
+
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+        # Add tools if provided
+        if tools:
+            gemini_tools = self._convert_tools_to_gemini_format(tools)
+            if gemini_tools:
+                payload["tools"] = gemini_tools
+
+        # Generation config
+        payload["generationConfig"] = {
+            "temperature": 0.7,
+            "maxOutputTokens": 8192,
+        }
+
+        # Streaming endpoint
+        url = f"{self.BASE_URL}/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
+
+        try:
+            with client.stream("POST", url, json=payload) as response:
+                if response.status_code != 200:
+                    error_text = response.read().decode()
+                    log_api_error(
+                        provider="google",
+                        model=model,
+                        error=error_text,
+                        request_context={"status_code": response.status_code}
+                    )
+
+                    # Try key rotation
+                    if _retry_count < 3 and (is_rate_limit_error(error_text) or is_auth_error(error_text)):
+                        rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_text)
+                        if rotated and new_key:
+                            log_debug("Gemini: Rotated to new API key, retrying...")
+                            self._client = None
+                            self._current_api_key = None
+                            yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                            return
+
+                    raise RuntimeError(f"Gemini API error: {error_text}")
+
+                current_tool_calls = {}
+
+                for line in response.iter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+
+                    try:
+                        data = json.loads(line[6:])  # Remove "data: " prefix
+
+                        candidates = data.get("candidates", [])
+                        if not candidates:
+                            continue
+
+                        candidate = candidates[0]
+                        content = candidate.get("content", {})
+                        parts = content.get("parts", [])
+
+                        for part in parts:
+                            # Text content
+                            if "text" in part:
+                                yield StreamChunk(content=part["text"])
+
+                            # Function call
+                            if "functionCall" in part:
+                                fc = part["functionCall"]
+                                idx = len(current_tool_calls)
+                                current_tool_calls[idx] = {
+                                    "id": f"gemini_call_{idx}",
+                                    "name": fc.get("name", ""),
+                                    "arguments": json.dumps(fc.get("args", {}))
+                                }
+
+                        # Check finish reason
+                        finish_reason = candidate.get("finishReason", "")
+                        if finish_reason:
+                            if current_tool_calls:
+                                tool_calls = [
+                                    ToolCall(
+                                        id=tc["id"],
+                                        name=tc["name"],
+                                        arguments=tc["arguments"]
+                                    )
+                                    for tc in current_tool_calls.values()
+                                    if tc["name"]
+                                ]
+                                if tool_calls:
+                                    yield StreamChunk(tool_calls=tool_calls, finish_reason="tool_calls")
+
+                            if finish_reason == "STOP":
+                                yield StreamChunk(finish_reason="stop")
+
+                    except json.JSONDecodeError:
+                        continue
+
+        except httpx.HTTPStatusError as e:
+            error_str = str(e)
+            log_api_error(
+                provider="google",
+                model=model,
+                error=error_str,
+                request_context={"message_count": len(messages)}
+            )
+            raise
+        except Exception as e:
+            log_api_error(
+                provider="google",
+                model=model,
+                error=str(e),
+                request_context={"message_count": len(messages)}
+            )
+            raise
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Client Manager
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1152,6 +1410,7 @@ class ClientManager:
             ModelProvider.ANTHROPIC: AnthropicClient(),
             ModelProvider.OPENAI: OpenAIClient(),
             ModelProvider.OLLAMA: OllamaClient(),
+            ModelProvider.GOOGLE: GeminiClient(),
         }
 
     def get_client(self, model_key: str) -> BaseAIClient:

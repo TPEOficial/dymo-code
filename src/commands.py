@@ -253,10 +253,12 @@ COMMANDS: Dict[str, Command] = {
     ),
     "history": Command(
         name="history",
-        description="View conversation history",
+        description="View, rename, or delete conversation history",
         category=CommandCategory.HISTORY,
-        usage="/history",
-        aliases=["hist"]
+        usage="/history [delete|rename <id> [name]]",
+        aliases=["hist"],
+        has_args=True,
+        arg_hint="subcommand"
     ),
     "sessions": Command(
         name="sessions",
@@ -494,10 +496,31 @@ def get_command(name: str) -> Optional[Command]:
     return None
 
 
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculate the Levenshtein distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+
+    if len(s2) == 0:
+        return len(s1)
+
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            # Cost is 0 if characters match, 1 otherwise
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
 def get_similar_commands(typo: str, max_suggestions: int = 3, cutoff: float = 0.5) -> List[str]:
     """
-    Find commands similar to a typo using fuzzy matching.
-    Uses difflib's SequenceMatcher for Levenshtein-like similarity.
+    Find commands similar to a typo using Levenshtein distance.
 
     Args:
         typo: The mistyped command name
@@ -505,7 +528,7 @@ def get_similar_commands(typo: str, max_suggestions: int = 3, cutoff: float = 0.
         cutoff: Minimum similarity ratio (0.0 to 1.0) to be considered a match
 
     Returns:
-        List of similar command names, sorted by similarity
+        List of similar command names, sorted by similarity (lowest distance first)
     """
     typo = typo.lower().lstrip("/")
 
@@ -516,13 +539,37 @@ def get_similar_commands(typo: str, max_suggestions: int = 3, cutoff: float = 0.
         if cmd.aliases:
             all_names.extend(cmd.aliases)
 
-    # Use get_close_matches for fuzzy matching
-    # This uses SequenceMatcher which implements a variant of Ratcliff/Obershelp algorithm
-    matches = get_close_matches(typo, all_names, n=max_suggestions, cutoff=cutoff)
+    # Calculate Levenshtein distance for each command
+    scored_matches = []
+    for name in all_names:
+        distance = _levenshtein_distance(typo, name)
+        max_len = max(len(typo), len(name))
 
-    # If no matches with default cutoff, try with lower cutoff for very short inputs
-    if not matches and len(typo) <= 3:
-        matches = get_close_matches(typo, all_names, n=max_suggestions, cutoff=0.4)
+        # Convert distance to similarity ratio (0 to 1)
+        similarity = 1.0 - (distance / max_len) if max_len > 0 else 0
+
+        if similarity >= cutoff:
+            # Lower distance = better match
+            # Also prefer commands where first letter matches
+            first_letter_bonus = -0.5 if typo and name and typo[0] == name[0] else 0
+
+            # Score: negative distance (so sorting ascending gives best matches)
+            score = distance + first_letter_bonus
+
+            scored_matches.append((name, score, distance, similarity))
+
+    # Sort by score (ascending = lower distance first)
+    scored_matches.sort(key=lambda x: x[1])
+
+    # If no matches with default cutoff, try with lower cutoff
+    if not scored_matches and len(typo) <= 4:
+        for name in all_names:
+            distance = _levenshtein_distance(typo, name)
+            max_len = max(len(typo), len(name))
+            similarity = 1.0 - (distance / max_len) if max_len > 0 else 0
+            if similarity >= 0.4:
+                scored_matches.append((name, distance, distance, similarity))
+        scored_matches.sort(key=lambda x: x[1])
 
     # Also check for commands that start with the typo (prefix matching)
     prefix_matches = [name for name in all_names if name.startswith(typo)]
@@ -532,7 +579,7 @@ def get_similar_commands(typo: str, max_suggestions: int = 3, cutoff: float = 0.
     for m in prefix_matches:
         if m not in combined:
             combined.append(m)
-    for m in matches:
+    for m, score, dist, sim in scored_matches:
         if m not in combined:
             combined.append(m)
 

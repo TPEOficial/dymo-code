@@ -15,9 +15,10 @@ from rich.text import Text
 from rich.box import ROUNDED
 from rich.markdown import Markdown
 
-from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt
+from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt, ModelProvider
 from .clients import ClientManager, StreamChunk, ToolCall, ExecutedTool
 from .lib.prompts import mode_manager
+from .api_key_manager import api_key_manager, is_rate_limit_error, is_credit_error
 from .tools import TOOL_DEFINITIONS, execute_tool, TOOLS, get_all_tool_definitions
 from .ui import console, display_tool_call, display_tool_result, display_executed_tool, display_code_execution_result, display_info, display_warning
 from .logger import log_error, log_api_error, log_tool_error, log_debug
@@ -47,6 +48,19 @@ def is_token_limit_error(error: Exception) -> bool:
     """Check if an error is related to token/context limits"""
     error_str = str(error).lower()
     return any(pattern in error_str for pattern in TOKEN_LIMIT_ERROR_PATTERNS)
+
+
+def is_quota_or_rate_error(error: str) -> bool:
+    """Check if an error is a quota exhausted or rate limit error"""
+    return is_rate_limit_error(error) or is_credit_error(error)
+
+
+def get_friendly_quota_message(provider: str) -> str:
+    """Get user-friendly message for quota errors"""
+    from .lib.providers import get_provider_name
+    name = get_provider_name(provider)
+    return f"Your {name} credits have been exhausted or rate limited."
+
 
 # Type for status callback
 StatusCallback = Optional[Callable[[str, str], None]]
@@ -310,6 +324,39 @@ class Agent:
         log_debug(f"Emergency context reduction: {old_count} -> {len(self.messages)} messages")
 
         return True
+
+    def _find_fallback_model(self, current_provider: str) -> Optional[str]:
+        """
+        Find an alternative model from a different provider that has available API keys.
+        Returns the model key if found, None otherwise.
+        """
+        from .lib.providers import get_default_model
+
+        # Get list of providers with available keys
+        fallback_providers = api_key_manager.get_fallback_providers(current_provider)
+
+        if not fallback_providers:
+            return None
+
+        # Priority order for fallback (prefer faster/cheaper options)
+        priority_order = ["groq", "google", "openai", "anthropic", "openrouter"]
+
+        # Sort fallback providers by priority
+        fallback_providers.sort(key=lambda p: priority_order.index(p) if p in priority_order else 99)
+
+        # Find the best model from fallback providers
+        for provider in fallback_providers:
+            # First try the default model for this provider
+            default_model = get_default_model(provider)
+            if default_model and default_model in AVAILABLE_MODELS:
+                return default_model
+
+            # Fallback: find any model from this provider
+            for model_key, model_config in AVAILABLE_MODELS.items():
+                if model_config.provider.value == provider:
+                    return model_key
+
+        return None
 
     def _generate_title_async(self, first_message: str):
         """Generate title for the conversation"""
@@ -694,10 +741,38 @@ class Agent:
                     self.messages.append({"role": "user", "content": user_input})
                     return self.chat(user_input, _retry_count=_retry_count + 1)
 
-            # Not a token error or max retries reached
+            # Check if this is a quota/rate limit error - try to switch provider
+            current_provider = AVAILABLE_MODELS[self.model_key].provider.value
+            if is_quota_or_rate_error(error_str):
+                log_debug(f"Quota/rate error detected for {current_provider}")
+
+                # Show friendly message
+                friendly_msg = get_friendly_quota_message(current_provider)
+                console.print()
+                console.print(Panel(
+                    friendly_msg,
+                    border_style=f"{COLORS['warning']}",
+                    box=ROUNDED
+                ))
+
+                # Try to find another available provider
+                fallback_model = self._find_fallback_model(current_provider)
+                if fallback_model:
+                    old_model = self.model_key
+                    self.model_key = fallback_model
+                    new_provider = AVAILABLE_MODELS[fallback_model].provider.value
+                    from .lib.providers import get_provider_name
+                    console.print(f"[{COLORS['success']}]Switching to {get_provider_name(new_provider)} ({fallback_model})...[/]\n")
+                    # Retry with new provider
+                    return self.chat(user_input, _retry_count=0)
+                else:
+                    console.print(f"[{COLORS['error']}]No other providers available. Configure more API keys with /setapikey[/]")
+                    return friendly_msg
+
+            # Not a token error or quota error - show full error
             error_msg = f"Error: {error_str}"
             log_api_error(
-                provider=AVAILABLE_MODELS[self.model_key].provider.value,
+                provider=current_provider,
                 model=model_id,
                 error=error_str,
                 request_context={"message_count": len(self.messages)}

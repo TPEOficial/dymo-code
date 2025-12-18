@@ -25,7 +25,7 @@ def get_conversations_file() -> Path:
     """Get the conversations file path"""
     return get_history_path() / "conversations.json"
 
-MAX_CONVERSATIONS = 50  # Maximum conversations to keep
+MAX_CONVERSATIONS = 30  # Maximum conversations to keep
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Conversation Data Structure
@@ -159,6 +159,13 @@ class HistoryManager:
                 return conv.get("messages", [])
         return None
 
+    def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """Get a conversation with all metadata by ID"""
+        for conv in self.conversations:
+            if conv["id"] == conversation_id:
+                return conv
+        return None
+
     def delete_conversation(self, conversation_id: str) -> bool:
         """Delete a conversation by ID"""
         for i, conv in enumerate(self.conversations):
@@ -166,6 +173,16 @@ class HistoryManager:
                 del self.conversations[i]
                 if self.current_conversation_id == conversation_id:
                     self.current_conversation_id = None
+                self._save_conversations()
+                return True
+        return False
+
+    def rename_conversation(self, conversation_id: str, new_title: str) -> bool:
+        """Rename a conversation by ID"""
+        for conv in self.conversations:
+            if conv["id"] == conversation_id:
+                conv["title"] = new_title
+                conv["updated_at"] = datetime.now().isoformat()
                 self._save_conversations()
                 return True
         return False

@@ -163,7 +163,8 @@ class SessionManager:
             self.console.print(stats)
             self.console.print()
 
-        self.console.print(f"[{colors['muted']}]Use /resume <number> or /resume <id> to continue[/]\n")
+        self.console.print(f"[{colors['muted']}]Use /resume <number> or /resume <id> to continue[/]")
+        self.console.print(f"[{colors['muted']}]Use /history delete <id> to delete • /history rename <id> <name> to rename[/]\n")
 
     def show_session_detail(self, session_id: str):
         """Show detailed information about a session"""

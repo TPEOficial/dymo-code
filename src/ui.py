@@ -622,7 +622,9 @@ def print_conversations(conversations: list):
 
     console.print()
     console.print(table)
-    console.print(f"\n[{COLORS['muted']}]Use /resume <id> to continue a conversation[/]\n")
+    console.print(f"\n[{COLORS['muted']}]Use /resume <id> to continue a conversation[/]")
+    console.print(f"[{COLORS['muted']}]Use /history delete <id> to delete a conversation[/]")
+    console.print(f"[{COLORS['muted']}]Use /history rename <id> <name> to rename[/]\n")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Memory Display Components

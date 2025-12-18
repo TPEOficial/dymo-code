@@ -73,6 +73,8 @@ CREDIT_EXHAUSTED_PATTERNS = [
     "402",
     "exceeded your current quota",
     "out of credits",
+    "resource_exhausted",
+    "quota failure",
 ]
 
 INVALID_KEY_PATTERNS = [
@@ -266,6 +268,7 @@ class APIKeyManager:
             "openrouter": "OPENROUTER_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
+            "google": "GOOGLE_API_KEY",
         }
         self._provider_lock = threading.Lock()
         self._initialized = True

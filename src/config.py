@@ -1,7 +1,7 @@
 """
 Configuration and constants for Dymo Code
 Multi-provider AI terminal assistant with support for:
-- Groq, OpenRouter, Claude (Anthropic), OpenAI, Ollama
+- Groq, OpenRouter, Claude (Anthropic), OpenAI, Ollama, Google Gemini
 """
 
 import os
@@ -20,6 +20,7 @@ class ModelProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     OLLAMA = "ollama"
+    GOOGLE = "google"
 
 @dataclass
 class ModelConfig:
@@ -74,6 +75,12 @@ PROVIDER_CONFIGS: Dict[ModelProvider, ProviderConfig] = {
         base_url="http://localhost:11434",
         requires_api_key=False,
         description="Local LLM inference"
+    ),
+    ModelProvider.GOOGLE: ProviderConfig(
+        name="Google",
+        env_key="GOOGLE_API_KEY",
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        description="Google's Gemini models - multimodal AI"
     ),
 }
 
@@ -213,6 +220,35 @@ AVAILABLE_MODELS: Dict[str, ModelConfig] = {
         description="Excellent for coding tasks",
         supports_tools=True,
         context_window=128000
+    ),
+
+    # Google Gemini Models
+    "gemini-flash": ModelConfig(
+        id="gemini-2.0-flash",
+        name="Gemini 2.0 Flash",
+        provider=ModelProvider.GOOGLE,
+        description="Fast and efficient Gemini model",
+        supports_tools=True,
+        context_window=1000000,
+        max_output_tokens=8192
+    ),
+    "gemini-pro": ModelConfig(
+        id="gemini-1.5-pro",
+        name="Gemini 1.5 Pro",
+        provider=ModelProvider.GOOGLE,
+        description="Advanced reasoning and long context",
+        supports_tools=True,
+        context_window=2000000,
+        max_output_tokens=8192
+    ),
+    "gemini-flash-lite": ModelConfig(
+        id="gemini-2.0-flash-lite",
+        name="Gemini 2.0 Flash Lite",
+        provider=ModelProvider.GOOGLE,
+        description="Lightweight and fast for simple tasks",
+        supports_tools=True,
+        context_window=1000000,
+        max_output_tokens=8192
     ),
 }
 
