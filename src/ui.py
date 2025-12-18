@@ -228,6 +228,7 @@ def display_tool_result(result: str, tool_name: str = None):
     if len(result) > 500: display_result = result[:500] + "\n... (truncated)"
     else: display_result = result
 
+    console.print("\n")
     console.print(
         Panel(
             display_result,
@@ -406,6 +407,7 @@ def display_file_diff(
 
     content.append("─" * 60, style=f"{COLORS['muted']}")
 
+    console.print()  # Newline before panel to avoid deformation
     console.print(Panel(
         content,
         title=f"[bold]📝 {file_path}[/bold]",
@@ -442,6 +444,7 @@ def display_file_creation(file_path: str, content: str, max_lines: int = 30):
 
     text.append("─" * 60, style=f"{COLORS['muted']}")
 
+    console.print()  # Newline before panel to avoid deformation
     console.print(Panel(
         text,
         title=f"[bold]✨ New file: {file_path}[/bold]",
@@ -479,6 +482,7 @@ def display_file_deletion(file_path: str, content: str, max_lines: int = 20):
 
     text.append("─" * 60, style=f"{COLORS['muted']}")
 
+    console.print()  # Newline before panel to avoid deformation
     console.print(Panel(
         text,
         title=f"[bold]🗑️ Deleted: {file_path}[/bold]",
@@ -519,6 +523,7 @@ def display_file_read(file_path: str, content: str, start_line: int = 1, max_lin
 
     if total_lines > max_lines: text.append(f"\n... {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
 
+    console.print()  # Newline before panel to avoid deformation
     console.print(Panel(
         text,
         title=f"[bold]📄 {file_path}[/bold] [{COLORS['muted']}]{total_lines} lines[/]",
@@ -955,3 +960,71 @@ def print_ollama_models(models: List[str], current_model: str = None):
     console.print()
     console.print(table)
     console.print(f"\n[{COLORS['muted']}]Use /ollama use <model> to switch to a local model[/]\n")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Theme Display Components
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def print_themes():
+    """Print available themes"""
+    try:
+        from .themes import theme_manager
+
+        table = Table(
+            title="Available Themes",
+            box=ROUNDED,
+            title_style=f"bold {COLORS['primary']}",
+            header_style=f"bold {COLORS['secondary']}"
+        )
+        table.add_column("Name", style=f"{COLORS['accent']}", width=20)
+        table.add_column("Description", style="white")
+        table.add_column("Type", style=f"{COLORS['muted']}", width=8)
+        table.add_column("Status", width=10)
+
+        for theme_info in theme_manager.list_themes():
+            status = f"[{COLORS['success']}]Active[/]" if theme_info["is_current"] else ""
+            theme_type = "Dark" if theme_info["is_dark"] else "Light"
+            table.add_row(
+                theme_info["display_name"],
+                theme_info["description"],
+                theme_type,
+                status
+            )
+
+        console.print()
+        console.print(table)
+        console.print(f"\n[{COLORS['muted']}]Use /theme <name> to switch themes[/]\n")
+
+    except ImportError:
+        console.print(f"\n[{COLORS['error']}]Theme system not available.[/]\n")
+
+
+def print_keybindings():
+    """Print available keyboard shortcuts"""
+    try:
+        from .keybindings import keybind_manager
+
+        table = Table(
+            title="Keyboard Shortcuts",
+            box=ROUNDED,
+            title_style=f"bold {COLORS['primary']}",
+            header_style=f"bold {COLORS['secondary']}"
+        )
+        table.add_column("Shortcut", style=f"{COLORS['accent']}", width=15)
+        table.add_column("Command", style=f"{COLORS['secondary']}", width=15)
+        table.add_column("Description", style="white")
+
+        for kb in keybind_manager.list_keybindings():
+            if kb["enabled"] and kb["command"]:
+                table.add_row(
+                    kb["display"],
+                    f"/{kb['command']}",
+                    kb["description"]
+                )
+
+        console.print()
+        console.print(table)
+        console.print()
+
+    except ImportError: console.print(f"\n[{COLORS['error']}]Keybinding system not available.[/]\n")

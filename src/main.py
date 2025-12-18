@@ -38,6 +38,11 @@ from src.ui import (
     print_welcome_with_memory
 )
 
+# New UI enhancement imports
+from src.terminal import terminal_title
+from src.toast import toast_manager
+from src.setup_command import setup_command, is_command_available
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Version Check
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -482,7 +487,7 @@ def handle_command(user_input: str, agent: Agent, queue_manager: MessageQueueMan
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_first_time_setup() -> str:
-    """Run the first-time setup to get user's name"""
+    """Run the first-time setup to get user's name and configure the command"""
     from rich.panel import Panel
     from rich.text import Text
 
@@ -527,6 +532,18 @@ def run_first_time_setup() -> str:
     )
     console.print()
 
+    # Setup command-line access
+    if not is_command_available():
+        console.print(f"[{COLORS['secondary']}]Setting up command-line access...[/]")
+        success, msg = setup_command(show_output=False)
+        if success:
+            console.print(f"[{COLORS['success']}]{msg}[/]")
+            console.print(f"[{COLORS['muted']}]You can now use 'dymo-code' from any terminal.[/]")
+        else:
+            console.print(f"[{COLORS['warning']}]Could not setup command: {msg}[/]")
+            console.print(f"[{COLORS['muted']}]You can run setup later with: python -m src.setup_command[/]")
+        console.print()
+
     return name
 
 
@@ -538,7 +555,13 @@ def main():
     """Main entry point"""
     console.clear()
     print_banner()
-    set_terminal_title("💬 Dymo Code")
+
+    # Initialize dynamic terminal title
+    terminal_title.set_title("Dymo Code")
+    terminal_title.update(model=None, session=None, status="Starting...")
+
+    # Start toast notification manager
+    toast_manager.start()
 
     # Start version check in background (non-blocking)
     start_version_check()
@@ -570,12 +593,18 @@ def main():
     # Start the async input handler thread
     async_input.start()
 
+    # Update terminal title with current model
+    model_config = AVAILABLE_MODELS.get(agent.model_key)
+    if model_config:
+        terminal_title.update(model=model_config.name, status=None)
+
     # Welcome message - different for returning users
     if not user_config.is_first_run:
         console.print()
         console.print(f"[bold {COLORS['secondary']}]Welcome back, {username}![/]")
     console.print(f"[{COLORS['muted']}]Type [bold]/[/bold] to see commands or start chatting.[/]")
     console.print(f"[{COLORS['muted']}]You can type while the agent processes - messages will be queued.[/]")
+    console.print(f"[{COLORS['muted']}]Try [bold]/themes[/bold] for color themes, [bold]/commands[/bold] for command palette.[/]")
     console.print()
     show_status(agent.model_key)
     console.print()
@@ -621,20 +650,31 @@ def main():
             queue_manager.set_processing(True)
             async_input.set_processing(True)
 
-            # Connect status callback to spinner
+            # Connect status callback to spinner and terminal title
             def status_callback(status: str, detail: str = ""):
                 async_input.update_status(status, detail)
+                # Update terminal title with status
+                if status == "streaming":
+                    terminal_title.set_status("Responding...")
+                else:
+                    terminal_title.set_status(status.replace("_", " ").title())
 
             agent.set_status_callback(status_callback)
 
             # Start spinner with initial status
             async_input.start_processing("thinking")
+            terminal_title.set_status("Thinking...")
 
-            try: agent.chat(user_input)
+            try:
+                response_text = agent.chat(user_input)
+                # Update suggestion context based on AI response for smart placeholder
+                if response_text:
+                    async_input.set_suggestion_context(response_text)
             finally:
                 async_input.stop_processing()
                 queue_manager.set_processing(False)
                 async_input.set_processing(False)
+                terminal_title.clear_status()
 
             console.print()
 
@@ -655,6 +695,8 @@ def main():
 
     # Cleanup
     async_input.stop()
+    toast_manager.stop()
+    terminal_title.reset()
     memory.close()
 
     # Apply update if downloaded

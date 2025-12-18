@@ -257,6 +257,36 @@ COMMANDS: Dict[str, Command] = {
         usage="/history",
         aliases=["hist"]
     ),
+    "sessions": Command(
+        name="sessions",
+        description="List all sessions with preview",
+        category=CommandCategory.HISTORY,
+        usage="/sessions [limit]",
+        has_args=True,
+        arg_hint="limit"
+    ),
+    "last": Command(
+        name="last",
+        description="Quick resume last session",
+        category=CommandCategory.HISTORY,
+        usage="/last"
+    ),
+    "search": Command(
+        name="search",
+        description="Search sessions by content",
+        category=CommandCategory.HISTORY,
+        usage="/search <query>",
+        has_args=True,
+        arg_hint="search query"
+    ),
+    "export": Command(
+        name="export",
+        description="Export current session to markdown",
+        category=CommandCategory.HISTORY,
+        usage="/export [filename]",
+        has_args=True,
+        arg_hint="filename.md"
+    ),
 
     # System Commands
     "queue": Command(
@@ -288,6 +318,116 @@ COMMANDS: Dict[str, Command] = {
         description="View context/token usage",
         category=CommandCategory.SYSTEM,
         usage="/context"
+    ),
+
+    # Theme Commands
+    "theme": Command(
+        name="theme",
+        description="Change the color theme",
+        category=CommandCategory.SYSTEM,
+        usage="/theme [name]",
+        has_args=True,
+        arg_hint="theme name"
+    ),
+    "themes": Command(
+        name="themes",
+        description="List all available themes",
+        category=CommandCategory.SYSTEM,
+        usage="/themes"
+    ),
+
+    # Palette Commands
+    "commands": Command(
+        name="commands",
+        description="Open command palette",
+        category=CommandCategory.GENERAL,
+        usage="/commands",
+        aliases=["palette", "cmd"]
+    ),
+    "keybindings": Command(
+        name="keybindings",
+        description="View keyboard shortcuts",
+        category=CommandCategory.SYSTEM,
+        usage="/keybindings",
+        aliases=["keys", "shortcuts"]
+    ),
+
+    # Clipboard Commands
+    "copy": Command(
+        name="copy",
+        description="Copy last response to clipboard",
+        category=CommandCategory.SYSTEM,
+        usage="/copy"
+    ),
+
+    # File Explorer Commands
+    "tree": Command(
+        name="tree",
+        description="Show directory tree view",
+        category=CommandCategory.SYSTEM,
+        usage="/tree [path] [depth]",
+        has_args=True,
+        arg_hint="path depth"
+    ),
+    "browse": Command(
+        name="browse",
+        description="Interactive file browser",
+        category=CommandCategory.SYSTEM,
+        usage="/browse [path]",
+        has_args=True,
+        arg_hint="start path"
+    ),
+    "preview": Command(
+        name="preview",
+        description="Preview file with syntax highlighting",
+        category=CommandCategory.SYSTEM,
+        usage="/preview <file>",
+        has_args=True,
+        arg_hint="file path"
+    ),
+    "find": Command(
+        name="find",
+        description="Fuzzy find files",
+        category=CommandCategory.SYSTEM,
+        usage="/find <pattern>",
+        has_args=True,
+        arg_hint="search pattern"
+    ),
+
+    # Setup Command
+    "setup": Command(
+        name="setup",
+        description="Setup 'dymo-code' command for terminal",
+        category=CommandCategory.SYSTEM,
+        usage="/setup"
+    ),
+
+    # Multi-Agent Commands
+    "agents": Command(
+        name="agents",
+        description="View running agent tasks",
+        category=CommandCategory.SYSTEM,
+        usage="/agents"
+    ),
+    "tasks": Command(
+        name="tasks",
+        description="View all agent task history",
+        category=CommandCategory.SYSTEM,
+        usage="/tasks"
+    ),
+    "task": Command(
+        name="task",
+        description="View details of a specific task",
+        category=CommandCategory.SYSTEM,
+        usage="/task <task_id>",
+        has_args=True,
+        arg_hint="task_id"
+    ),
+    "cleartasks": Command(
+        name="cleartasks",
+        description="Clear completed agent tasks",
+        category=CommandCategory.SYSTEM,
+        usage="/cleartasks"
     ),
 }
 

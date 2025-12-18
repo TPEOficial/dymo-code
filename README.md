@@ -65,10 +65,12 @@ $ python run.py
 | Name                              | Status              | Active |
 |-----------------------------------|---------------------|--------|
 | AI Chat                           | In development      |   ✅   |
-| Multi-Agent	                      | In development	    |   ⚠️   |
+| Parallel Multi-Agent	            | In development	    |   ⚠️   |
 | Support for multiple AI providers | In development      |   ⚠️   |
 | Jailbreak Mode                    | In development      |   ⚠️   |
 | MCP Support                       | In BETA Phase       |   ⚠️   |
+| Theme system                      | Active              |   ✅   |
+| Search engine with bypass         | In development      |   ⚠️   |
 
 ### Supported AI Models
 

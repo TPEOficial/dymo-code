@@ -6,6 +6,21 @@ import os, subprocess
 from typing import Dict, Any, Callable, List, Optional
 from dataclasses import dataclass
 
+# Import web tools
+from .web_tools import (
+    web_search,
+    fetch_url,
+    WEB_TOOL_DEFINITIONS,
+    execute_web_tool
+)
+
+# Import multi-agent tools
+from .multi_agent import (
+    MULTI_AGENT_TOOL_DEFINITIONS,
+    execute_multi_agent_tool,
+    agent_pool
+)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # File Change Tracking for Diff Display
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -53,12 +68,10 @@ def list_files_in_dir(directory: str = ".") -> str:
     """List all files and folders in a directory"""
     try:
         # Default to current directory if empty
-        if not directory:
-            directory = "."
+        if not directory: directory = "."
 
         items = os.listdir(directory)
-        if not items:
-            return "Directory is empty."
+        if not items: return "Directory is empty."
 
         files = []
         dirs = []
@@ -70,30 +83,22 @@ def list_files_in_dir(directory: str = ".") -> str:
                 try:
                     size = os.path.getsize(path)
                     files.append(f"[file] {item} ({format_size(size)})")
-                except OSError:
-                    files.append(f"[file] {item}")
+                except OSError: files.append(f"[file] {item}")
 
         result = []
-        if dirs:
-            result.extend(sorted(dirs))
-        if files:
-            result.extend(sorted(files))
+        if dirs: result.extend(sorted(dirs))
+        if files: result.extend(sorted(files))
 
         return "\n".join(result)
-    except FileNotFoundError:
-        return f"Error: Directory '{directory}' not found."
-    except PermissionError:
-        return f"Error: Permission denied to access '{directory}'."
-    except Exception as e:
-        return f"Error: {str(e)}"
-
+    except FileNotFoundError: return f"Error: Directory '{directory}' not found."
+    except PermissionError: return f"Error: Permission denied to access '{directory}'."
+    except Exception as e: return f"Error: {str(e)}"
 
 def read_file(file_path: str = "") -> str:
     """Read the contents of a file"""
     global _last_file_change
 
-    if not file_path:
-        return "Error: file_path is required"
+    if not file_path: return "Error: file_path is required"
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -144,24 +149,19 @@ def read_file(file_path: str = "") -> str:
 
 def create_folder(folder_path: str = "") -> str:
     """Create a new folder"""
-    if not folder_path:
-        return "Error: folder_path is required"
+    if not folder_path: return "Error: folder_path is required"
 
     try:
         os.makedirs(folder_path, exist_ok=True)
         return f"Successfully created folder: {folder_path}"
-    except PermissionError:
-        return f"Error: Permission denied to create '{folder_path}'."
-    except Exception as e:
-        return f"Error: {str(e)}"
-
+    except PermissionError: return f"Error: Permission denied to create '{folder_path}'."
+    except Exception as e: return f"Error: {str(e)}"
 
 def create_file(file_path: str = "", content: str = "") -> str:
     """Create or overwrite a file with given content"""
     global _last_file_change
 
-    if not file_path:
-        return "Error: file_path is required"
+    if not file_path: return "Error: file_path is required"
 
     try:
         # Check if file exists and read old content for diff
@@ -171,13 +171,11 @@ def create_file(file_path: str = "", content: str = "") -> str:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     old_content = f.read()
-            except:
-                old_content = None
+            except: old_content = None
 
         # Ensure parent directory exists
         parent_dir = os.path.dirname(file_path)
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
+        if parent_dir: os.makedirs(parent_dir, exist_ok=True)
 
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -214,8 +212,7 @@ def create_file(file_path: str = "", content: str = "") -> str:
 
 def run_command(command: str = "") -> str:
     """Execute a shell command and return output"""
-    if not command:
-        return "Error: command is required"
+    if not command: return "Error: command is required"
 
     try:
         result = subprocess.run(
@@ -227,17 +224,12 @@ def run_command(command: str = "") -> str:
             cwd=os.getcwd()
         )
         output = ""
-        if result.stdout:
-            output += result.stdout
-        if result.stderr:
-            output += f"\n[stderr]\n{result.stderr}" if output else result.stderr
-        if result.returncode != 0:
-            output += f"\n[exit code: {result.returncode}]"
+        if result.stdout: output += result.stdout
+        if result.stderr: output += f"\n[stderr]\n{result.stderr}" if output else result.stderr
+        if result.returncode != 0: output += f"\n[exit code: {result.returncode}]"
         return output.strip() if output.strip() else "(No output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Command timed out after 30 seconds."
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except subprocess.TimeoutExpired: return "Error: Command timed out after 30 seconds."
+    except Exception as e: return f"Error: {str(e)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,6 +242,9 @@ TOOLS: Dict[str, Callable] = {
     "create_folder": create_folder,
     "create_file": create_file,
     "run_command": run_command,
+    # Web tools
+    "web_search": web_search,
+    "fetch_url": fetch_url,
     # Aliases - some models use different names for the same tools
     "replace_file": create_file,      # Alias for create_file
     "write_file": create_file,        # Alias for create_file
@@ -261,6 +256,8 @@ TOOLS: Dict[str, Callable] = {
     "shell": run_command,             # Alias for run_command
     "ls": list_files_in_dir,          # Alias for list_files_in_dir
     "cat": read_file,                 # Alias for read_file
+    "search": web_search,             # Alias for web_search
+    "browse": fetch_url               # Alias for fetch_url
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -366,31 +363,35 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
         try:
             from .mcp import execute_mcp_tool
             return execute_mcp_tool(name, args)
-        except Exception as e:
-            return f"Error executing MCP tool {name}: {str(e)}"
+        except Exception as e: return f"Error executing MCP tool {name}: {str(e)}"
 
-    if name not in TOOLS:
-        return f"Error: Unknown tool '{name}'"
+    # Check if it's a multi-agent tool
+    if name in ("spawn_agents", "check_agent_tasks"):
+        try:
+            return execute_multi_agent_tool(name, args)
+        except Exception as e: return f"Error executing multi-agent tool {name}: {str(e)}"
 
-    try:
-        return str(TOOLS[name](**args))
-    except TypeError as e:
-        # Handle missing required arguments gracefully
-        return f"Error: Invalid arguments for {name}: {str(e)}"
-    except Exception as e:
-        return f"Error executing {name}: {str(e)}"
+    if name not in TOOLS: return f"Error: Unknown tool '{name}'"
 
+    try: return str(TOOLS[name](**args))
+    except TypeError as e: return f"Error: Invalid arguments for {name}: {str(e)}"
+    except Exception as e: return f"Error executing {name}: {str(e)}"
 
 def get_all_tool_definitions() -> List[Dict[str, Any]]:
-    """Get all tool definitions including MCP tools"""
+    """Get all tool definitions including web, multi-agent, and MCP tools"""
     all_tools = TOOL_DEFINITIONS.copy()
+
+    # Add web tools
+    all_tools.extend(WEB_TOOL_DEFINITIONS)
+
+    # Add multi-agent tools
+    all_tools.extend(MULTI_AGENT_TOOL_DEFINITIONS)
 
     # Add MCP tools if available
     try:
         from .mcp import get_mcp_tool_definitions
         mcp_tools = get_mcp_tool_definitions()
         all_tools.extend(mcp_tools)
-    except Exception:
-        pass
+    except Exception: pass
 
     return all_tools

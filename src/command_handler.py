@@ -3,6 +3,7 @@ Command Handler for Dymo Code
 Handles all slash commands and their execution
 """
 
+import os
 import webbrowser
 from typing import Optional, Tuple, Any
 
@@ -311,8 +312,21 @@ class CommandHandler:
             return True, None
 
         elif name == "models":
-            provider_availability = self.agent.client_manager.get_available_providers()
-            print_models(self.agent.model_key, provider_availability)
+            # Try enhanced selector first
+            try:
+                from .enhanced_selector import model_selector
+                selected = model_selector.show_models(self.agent.model_key)
+                if selected:
+                    if self.agent.set_model(selected):
+                        config = AVAILABLE_MODELS[selected]
+                        display_success(f"Switched to {config.name}")
+                        show_status(self.agent.model_key)
+                    else:
+                        display_error(f"Could not switch to model: {selected}")
+            except ImportError:
+                # Fallback to table view
+                provider_availability = self.agent.client_manager.get_available_providers()
+                print_models(self.agent.model_key, provider_availability)
             return True, None
 
         elif name == "mode":
@@ -575,8 +589,19 @@ class CommandHandler:
             from .history import history_manager
 
             if name == "resume" and args:
+                # Check if it's a number (shortcut)
+                try:
+                    idx = int(args.strip()) - 1
+                    conversations = history_manager.get_recent_conversations(10)
+                    if 0 <= idx < len(conversations):
+                        conv_id = conversations[idx].get("id", "")
+                    else:
+                        display_error("Invalid session number.")
+                        return True, None
+                except ValueError:
+                    conv_id = args.strip()
+
                 # Resume specific conversation
-                conv_id = args.strip()
                 if self.agent.load_conversation(conv_id):
                     conv = history_manager.get_current_conversation()
                     title = conv.get("title", "Untitled") if conv else "Untitled"
@@ -588,6 +613,79 @@ class CommandHandler:
                 # Show conversations
                 conversations = history_manager.get_recent_conversations(10)
                 print_conversations(conversations)
+            return True, None
+
+        elif name == "sessions":
+            try:
+                from .session_manager import session_manager
+
+                limit = 10
+                if args:
+                    try:
+                        limit = int(args.strip())
+                    except ValueError:
+                        pass
+
+                session_manager.list_sessions(limit=limit, show_preview=True)
+            except ImportError:
+                # Fallback to history
+                from .history import history_manager
+                conversations = history_manager.get_recent_conversations(10)
+                print_conversations(conversations)
+            return True, None
+
+        elif name == "last":
+            try:
+                from .session_manager import session_manager
+                from .history import history_manager
+
+                conv_id = session_manager.quick_resume_last()
+                if conv_id:
+                    if self.agent.load_conversation(conv_id):
+                        conv = history_manager.get_current_conversation()
+                        title = conv.get("title", "Untitled") if conv else "Untitled"
+                        display_success(f"Resumed: {title}")
+                        show_status(self.agent.model_key)
+                    else:
+                        display_error("Failed to resume session.")
+            except ImportError:
+                display_error("Session manager not available.")
+            return True, None
+
+        elif name == "search":
+            if not args:
+                display_error("Usage: /search <query>")
+                return True, None
+
+            try:
+                from .session_manager import session_manager
+                session_manager.show_search_results(args.strip())
+            except ImportError:
+                display_error("Session manager not available.")
+            return True, None
+
+        elif name == "export":
+            try:
+                from .session_manager import session_exporter
+                from .history import history_manager
+
+                conv = history_manager.get_current_conversation()
+                if not conv:
+                    display_error("No active session to export.")
+                    return True, None
+
+                conv_id = conv.get("id", "")
+                filename = args.strip() if args else f"session_{conv_id[:8]}.md"
+
+                if not filename.endswith(".md"):
+                    filename += ".md"
+
+                if session_exporter.save_to_file(conv_id, filename):
+                    display_success(f"Session exported to: {filename}")
+                else:
+                    display_error("Failed to export session.")
+            except ImportError:
+                display_error("Session exporter not available.")
             return True, None
 
         # ═══════════════════════════════════════════════════════════════════════
@@ -653,6 +751,287 @@ class CommandHandler:
             if state.needs_compression:
                 console.print(f"\n  [{COLORS['warning']}]Context will be compressed on next message[/]")
             console.print()
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Theme Commands
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "theme":
+            try:
+                from .themes import theme_manager
+                from .command_palette import quick_actions
+
+                if args:
+                    # Set theme directly
+                    theme_name = args.strip().lower()
+                    if theme_manager.set_theme(theme_name):
+                        theme = theme_manager.current_theme
+                        display_success(f"Theme changed to: {theme.display_name}")
+                    else:
+                        display_error(f"Unknown theme. Use /themes to see options.")
+                else:
+                    # Show theme picker
+                    selected = quick_actions.show_theme_picker(theme_manager.current_theme_name)
+                    if selected:
+                        if theme_manager.set_theme(selected):
+                            theme = theme_manager.current_theme
+                            display_success(f"Theme changed to: {theme.display_name}")
+            except ImportError:
+                display_error("Theme system not available.")
+            return True, None
+
+        elif name == "themes":
+            try:
+                from .themes import theme_manager
+
+                # Try enhanced selector
+                try:
+                    from .enhanced_selector import theme_selector
+                    selected = theme_selector.show_themes(theme_manager.current_theme_name)
+                    if selected:
+                        if theme_manager.set_theme(selected):
+                            theme = theme_manager.current_theme
+                            display_success(f"Theme changed to: {theme.display_name}")
+                except ImportError:
+                    # Fallback to table view
+                    console.print(f"\n[bold {COLORS['secondary']}]Available Themes[/]\n")
+
+                    table = Table(box=ROUNDED, header_style=f"bold {COLORS['muted']}")
+                    table.add_column("Name", style=f"{COLORS['accent']}", width=20)
+                    table.add_column("Description", style="white")
+                    table.add_column("Type", width=8)
+                    table.add_column("Status", width=10)
+
+                    for theme_info in theme_manager.list_themes():
+                        status = f"[{COLORS['success']}]Active[/]" if theme_info["is_current"] else ""
+                        theme_type = "Dark" if theme_info["is_dark"] else "Light"
+                        table.add_row(
+                            theme_info["display_name"],
+                            theme_info["description"],
+                            theme_type,
+                            status
+                        )
+
+                    console.print(table)
+                    console.print(f"\n[{COLORS['muted']}]Use /theme <name> to switch themes[/]\n")
+            except ImportError:
+                display_error("Theme system not available.")
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Command Palette
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "commands":
+            try:
+                from .command_palette import command_palette
+                result = command_palette.show()
+                if result:
+                    # Execute the selected command
+                    return self.handle(result)
+            except ImportError:
+                # Fallback to enhanced help
+                print_enhanced_help()
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Keybindings
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "keybindings":
+            try:
+                from .keybindings import keybind_manager
+
+                console.print(f"\n[bold {COLORS['secondary']}]Keyboard Shortcuts[/]\n")
+
+                table = Table(box=ROUNDED, header_style=f"bold {COLORS['muted']}")
+                table.add_column("Shortcut", style=f"{COLORS['accent']}", width=15)
+                table.add_column("Command", style=f"{COLORS['secondary']}", width=15)
+                table.add_column("Description", style="white")
+
+                for kb in keybind_manager.list_keybindings():
+                    if kb["enabled"] and kb["command"]:
+                        table.add_row(
+                            kb["display"],
+                            f"/{kb['command']}",
+                            kb["description"]
+                        )
+
+                console.print(table)
+                console.print()
+            except ImportError:
+                display_info("Keybinding system not available.")
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Clipboard
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "copy":
+            try:
+                from .terminal import copy_to_clipboard
+
+                # Get last assistant message
+                last_response = None
+                for msg in reversed(self.agent.messages):
+                    if msg.get("role") == "assistant":
+                        last_response = msg.get("content", "")
+                        break
+
+                if last_response:
+                    if copy_to_clipboard(last_response):
+                        display_success("Last response copied to clipboard!")
+                    else:
+                        display_error("Failed to copy to clipboard.")
+                else:
+                    display_info("No response to copy.")
+            except ImportError:
+                display_error("Clipboard functionality not available.")
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # File Explorer Commands
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "tree":
+            try:
+                from .file_explorer import file_explorer
+
+                # Parse arguments: /tree [path] [depth]
+                parts = args.split() if args else []
+                path = parts[0] if parts else "."
+                depth = 3
+
+                if len(parts) > 1:
+                    try:
+                        depth = int(parts[1])
+                    except ValueError:
+                        pass
+
+                file_explorer.show_tree(path, max_depth=depth)
+            except ImportError:
+                display_error("File explorer not available.")
+            return True, None
+
+        elif name == "browse":
+            try:
+                from .file_explorer import file_explorer
+
+                start_path = args.strip() if args else "."
+                selected = file_explorer.interactive_browse(start_path)
+
+                if selected:
+                    display_success(f"Selected: {selected}")
+                    # Optionally preview the file
+                    console.print(f"[{COLORS['muted']}]Use /preview {selected} to view contents[/]")
+            except ImportError:
+                display_error("File explorer not available.")
+            return True, None
+
+        elif name == "preview":
+            if not args:
+                display_error("Usage: /preview <file>")
+                return True, None
+
+            try:
+                from .file_explorer import file_explorer
+                file_explorer.preview_file(args.strip())
+            except ImportError:
+                display_error("File explorer not available.")
+            return True, None
+
+        elif name == "find":
+            if not args:
+                display_error("Usage: /find <pattern>")
+                return True, None
+
+            try:
+                from .file_explorer import file_explorer
+
+                pattern = args.strip()
+                results = file_explorer.fuzzy_find(pattern)
+
+                if results:
+                    console.print(f"\n[bold {COLORS['secondary']}]Found {len(results)} files:[/]\n")
+                    for i, path in enumerate(results, 1):
+                        console.print(f"  [{COLORS['muted']}]{i:2}.[/] {path}")
+                    console.print()
+                else:
+                    display_info(f"No files found matching '{pattern}'")
+            except ImportError:
+                display_error("File explorer not available.")
+            return True, None
+
+        elif name == "setup":
+            try:
+                from .setup_command import setup_command, is_command_available, get_install_location
+
+                if is_command_available():
+                    location = get_install_location()
+                    display_success(f"'dymo-code' command is already available at: {location}")
+                else:
+                    console.print(f"[{COLORS['secondary']}]Setting up 'dymo-code' command...[/]")
+                    success, msg = setup_command(show_output=False)
+                    if success:
+                        display_success(msg)
+                    else:
+                        display_error(msg)
+            except ImportError:
+                display_error("Setup module not available.")
+            return True, None
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Multi-Agent Commands
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "agents":
+            try:
+                from .multi_agent import agent_pool, TaskStatus
+
+                active = agent_pool.get_active_tasks()
+                if not active:
+                    display_info("No active agent tasks running.")
+                else:
+                    console.print(f"\n[bold {COLORS['secondary']}]Active Agents ({len(active)})[/]\n")
+                    for task in active:
+                        status_color = COLORS['warning'] if task.status == TaskStatus.RUNNING else COLORS['muted']
+                        progress = int(task.progress * 100)
+                        console.print(f"  {task.status_icon} [{COLORS['accent']}]{task.id}[/] - {task.description}")
+                        console.print(f"     [{status_color}]{task.status.value}[/] - {progress}% - {task.duration:.1f}s")
+                    console.print()
+            except ImportError:
+                display_error("Multi-agent system not available.")
+            return True, None
+
+        elif name == "tasks":
+            try:
+                from .multi_agent import agent_pool
+                agent_pool.show_tasks()
+            except ImportError:
+                display_error("Multi-agent system not available.")
+            return True, None
+
+        elif name == "task":
+            if not args:
+                display_error("Usage: /task <task_id>")
+                return True, None
+
+            try:
+                from .multi_agent import agent_pool
+                task_id = args.strip()
+                agent_pool.show_task_result(task_id)
+            except ImportError:
+                display_error("Multi-agent system not available.")
+            return True, None
+
+        elif name == "cleartasks":
+            try:
+                from .multi_agent import agent_pool
+                agent_pool.clear_completed()
+                display_success("Cleared completed tasks.")
+            except ImportError:
+                display_error("Multi-agent system not available.")
             return True, None
 
         # Unknown command

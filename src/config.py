@@ -230,10 +230,11 @@ User's message: {message}
 Title:"""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Color Scheme
+# Color Scheme (Dynamic Theme Support)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-COLORS = {
+# Default colors (used if theme system not yet loaded)
+_DEFAULT_COLORS = {
     "primary": "#7C3AED",      # Purple
     "secondary": "#06B6D4",    # Cyan
     "success": "#10B981",      # Green
@@ -242,6 +243,37 @@ COLORS = {
     "muted": "#6B7280",        # Gray
     "accent": "#EC4899",       # Pink
 }
+
+def get_colors():
+    """Get current theme colors (dynamic)"""
+    try:
+        from .themes import theme_manager
+        return theme_manager.colors
+    except ImportError:
+        return _DEFAULT_COLORS
+
+# For backward compatibility - this is a proxy that gets current theme colors
+class ColorsProxy(dict):
+    """Proxy dict that always returns current theme colors"""
+    def __getitem__(self, key):
+        return get_colors().get(key, "#FFFFFF")
+
+    def get(self, key, default=None):
+        return get_colors().get(key, default)
+
+    def __iter__(self):
+        return iter(get_colors())
+
+    def keys(self):
+        return get_colors().keys()
+
+    def values(self):
+        return get_colors().values()
+
+    def items(self):
+        return get_colors().items()
+
+COLORS = ColorsProxy()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # System Prompt

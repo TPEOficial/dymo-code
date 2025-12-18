@@ -4,6 +4,7 @@ Terminal UI with command autocomplete using prompt_toolkit
 - Works on Windows, macOS, and Linux
 - Can type while agent processes
 - Animated spinner with contextual status
+- Smart placeholder suggestions based on context
 """
 
 import sys
@@ -12,6 +13,7 @@ import time
 from typing import Optional, List, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
 from rich.text import Text
@@ -20,6 +22,9 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 
 from .config import COLORS
 from .commands import Command, get_command_suggestions, CATEGORY_ICONS, COMMANDS
@@ -180,27 +185,250 @@ class CommandCompleter(Completer):
                 completion_text,
                 start_position=-len(cmd_part),
                 display=HTML(f'<b>/{cmd.name}</b>'),
-                display_meta=HTML(f'<style fg="#888">{icon} {cmd.description[:40]}</style>')
+                # Use #B4B4B4 instead of #888 for better visibility
+                display_meta=HTML(f'<style fg="#B4B4B4">{icon} {cmd.description[:40]}</style>')
             )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Custom Style
+# Dynamic Style Factory
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PROMPT_STYLE = Style.from_dict({
-    # Prompt
-    'prompt': f'bold {COLORS["primary"]}',
-    # Completion menu
-    'completion-menu': 'bg:#1e1e1e #ffffff',
-    'completion-menu.completion': 'bg:#1e1e1e #ffffff',
-    'completion-menu.completion.current': f'bg:{COLORS["primary"]} #ffffff bold',
-    'completion-menu.meta': '#888888',
-    'completion-menu.meta.current': '#ffffff',
-    # Scrollbar
-    'scrollbar.background': '#1e1e1e',
-    'scrollbar.button': COLORS['primary'],
-})
+def get_prompt_style() -> Style:
+    """Get prompt style with current theme colors"""
+    # Use current theme colors for better visibility
+    try:
+        from .themes import theme_manager
+        colors = theme_manager.colors
+        primary = colors.get("primary", "#7C3AED")
+        bg = colors.get("background", "#1a1a2e")
+    except ImportError:
+        primary = COLORS["primary"]
+        bg = "#1a1a2e"
+
+    return Style.from_dict({
+        # Prompt
+        'prompt': f'bold {primary}',
+        'warning': f'bold #F59E0B',
+        # Completion menu - improved contrast
+        'completion-menu': f'bg:#252536 #E5E5E5',
+        'completion-menu.completion': f'bg:#252536 #E5E5E5',
+        'completion-menu.completion.current': f'bg:{primary} #ffffff bold',
+        # Meta/description - MUCH better visibility than #888
+        'completion-menu.meta': '#B4B4B4',  # Lighter gray for visibility
+        'completion-menu.meta.current': '#ffffff',
+        # Scrollbar
+        'scrollbar.background': '#252536',
+        'scrollbar.button': primary,
+    })
+
+
+# Legacy constant for compatibility
+PROMPT_STYLE = get_prompt_style()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Smart Placeholder Suggestions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Context-based suggestions - varied and specific
+CONTEXT_SUGGESTIONS = {
+    "greeting": [
+        "What can you help me with?",
+        "Tell me about your capabilities",
+        "Help me get started",
+    ],
+    "code": [
+        "Explain this code",
+        "Add tests for this",
+        "Optimize the performance",
+        "Refactor this code",
+        "Fix the bugs here",
+    ],
+    "error": [
+        "Fix this error",
+        "Why is this happening?",
+        "How do I debug this?",
+        "Show me the solution",
+    ],
+    "file": [
+        "Show me the file",
+        "Edit this file",
+        "What does this file do?",
+        "Create a similar file",
+    ],
+    "general": [
+        "Continue",
+        "Tell me more",
+        "Can you elaborate?",
+        "What else should I know?",
+        "Show me an example",
+    ],
+    "project": [
+        "Analyze the structure",
+        "Find potential issues",
+        "Suggest improvements",
+        "Show dependencies",
+    ],
+    "question": [
+        "Thanks, that helps!",
+        "Can you give more details?",
+        "What about edge cases?",
+        "How would you improve this?",
+    ],
+    "task_complete": [
+        "Perfect, now do...",
+        "Great! What's next?",
+        "Thanks! Now help me with...",
+        "Excellent! Can you also...",
+    ],
+    "analysis": [
+        "What do you recommend?",
+        "Implement the suggestion",
+        "Show me how",
+        "Let's do it",
+    ],
+}
+
+# Default suggestions for empty context
+DEFAULT_SUGGESTIONS = [
+    "What would you like to do?",
+    "Ask me anything...",
+    "Describe your task...",
+]
+
+# Suggestion rotation counter
+_suggestion_counter = 0
+
+
+class SmartSuggester(AutoSuggest):
+    """
+    Smart auto-suggester that provides context-aware placeholders.
+    Generates suggestions synchronously for immediate feedback.
+    """
+
+    def __init__(self):
+        self._current_suggestion: Optional[str] = None
+        self._last_response: str = ""
+        self._last_context: str = "general"
+        self._lock = threading.Lock()
+        self._suggestion_index: int = 0
+
+    def set_context(self, last_response: str, context_type: str = "general"):
+        """Set context for next suggestion (called after AI responds)"""
+        with self._lock:
+            self._last_response = last_response[:800] if last_response else ""
+            self._last_context = context_type
+            # Generate suggestion immediately (fast operation)
+            self._current_suggestion = self._generate_suggestion_sync()
+
+    def _detect_context(self, response: str) -> str:
+        """Detect context type from response content"""
+        response_lower = response.lower()
+
+        # Priority-ordered context detection
+        if any(w in response_lower for w in ["error", "exception", "failed", "traceback", "bug"]):
+            return "error"
+
+        if any(w in response_lower for w in ["completed", "done", "created", "finished", "success"]):
+            return "task_complete"
+
+        if any(w in response_lower for w in ["```", "def ", "class ", "function ", "import ", "const ", "let ", "var "]):
+            return "code"
+
+        if any(w in response_lower for w in ["analyze", "review", "suggest", "recommend", "consider"]):
+            return "analysis"
+
+        if response_lower.endswith("?") or "what" in response_lower or "how" in response_lower:
+            return "question"
+
+        if any(w in response_lower for w in ["file", "directory", "folder", "path", ".py", ".js", ".ts"]):
+            return "file"
+
+        if any(w in response_lower for w in ["project", "structure", "architecture", "codebase"]):
+            return "project"
+
+        if any(w in response_lower for w in ["hello", "hi ", "welcome", "nice to meet"]):
+            return "greeting"
+
+        return "general"
+
+    def _generate_suggestion_sync(self) -> str:
+        """Generate suggestion synchronously - fast operation"""
+        global _suggestion_counter
+
+        response = self._last_response
+        context = self._detect_context(response)
+
+        # Get suggestions for detected context
+        suggestions = CONTEXT_SUGGESTIONS.get(context, CONTEXT_SUGGESTIONS["general"])
+
+        # Rotate through suggestions deterministically
+        _suggestion_counter += 1
+        idx = _suggestion_counter % len(suggestions)
+
+        return suggestions[idx]
+
+    def get_suggestion(self, buffer, document) -> Optional[Suggestion]:
+        """Get suggestion for current input"""
+        text = document.text
+
+        # Don't suggest if typing more than 2 chars
+        if len(text) > 2:
+            return None
+
+        # Don't suggest for commands
+        if text.startswith("/"):
+            return None
+
+        # Return current suggestion when input is empty
+        with self._lock:
+            if self._current_suggestion and not text:
+                return Suggestion(self._current_suggestion)
+
+        # Default suggestion if no context set yet
+        if not text:
+            global _suggestion_counter
+            idx = _suggestion_counter % len(DEFAULT_SUGGESTIONS)
+            return Suggestion(DEFAULT_SUGGESTIONS[idx])
+
+        return None
+
+
+# Global suggester instance
+smart_suggester = SmartSuggester()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Key Bindings for Tab completion
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_key_bindings():
+    """Create custom key bindings for Tab to accept suggestion"""
+    kb = KeyBindings()
+
+    @kb.add(Keys.Tab)
+    def accept_suggestion(event):
+        """Accept the current suggestion with Tab"""
+        buff = event.app.current_buffer
+        suggestion = buff.suggestion
+
+        if suggestion:
+            buff.insert_text(suggestion.text)
+        else:
+            # Default tab behavior - insert spaces
+            buff.insert_text("    ")
+
+    @kb.add(Keys.Right)
+    def accept_suggestion_right(event):
+        """Accept suggestion with Right arrow when at end of line"""
+        buff = event.app.current_buffer
+        if buff.cursor_position == len(buff.text) and buff.suggestion:
+            buff.insert_text(buff.suggestion.text)
+        else:
+            buff.cursor_right()
+
+    return kb
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -244,11 +472,17 @@ class TerminalUI:
         if self._session is None:
             self._session = PromptSession(
                 completer=CommandCompleter(),
-                style=PROMPT_STYLE,
+                style=get_prompt_style(),
                 complete_while_typing=True,
                 complete_in_thread=True,
+                auto_suggest=smart_suggester,  # Smart placeholder
+                key_bindings=create_key_bindings(),  # Tab to accept
             )
         return self._session
+
+    def set_suggestion_context(self, last_response: str, context_type: str = "general"):
+        """Update the suggestion context after AI responds"""
+        smart_suggester.set_context(last_response, context_type)
 
     def start(self):
         """Start background reader thread"""
