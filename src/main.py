@@ -94,6 +94,21 @@ def _create_ssl_context():
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
+def _parse_version(version: str) -> tuple:
+    """Parse version string into tuple for comparison (e.g., '0.0.0.14' -> (0, 0, 0, 14))"""
+    try:
+        return tuple(int(x) for x in version.split('.'))
+    except (ValueError, AttributeError):
+        return (0,)
+
+
+def _is_newer_version(remote: str, local: str) -> bool:
+    """Check if remote version is newer than local version"""
+    remote_tuple = _parse_version(remote)
+    local_tuple = _parse_version(local)
+    return remote_tuple > local_tuple
+
+
 def _check_for_updates():
     """Check for updates in background and store result"""
     global _update_available
@@ -114,7 +129,9 @@ def _check_for_updates():
             data = json.loads(response.read().decode("utf-8"))
             remote_version = data.get("version")
 
-            if remote_version and remote_version != local_version: _update_available = remote_version
+            # Set update available if versions are different
+            if remote_version and remote_version != local_version:
+                _update_available = remote_version
     except Exception: pass
 
 def start_version_check():
@@ -142,6 +159,10 @@ def start_auto_setup():
     thread.start()
 
 
+_version_check_thread: Optional[threading.Thread] = None
+_setup_thread: Optional[threading.Thread] = None
+
+
 def start_parallel_initialization():
     """
     Start all background initialization tasks in parallel.
@@ -149,21 +170,23 @@ def start_parallel_initialization():
     - Version check (fetches remote version for update notification)
     - Auto-setup (configures dymo-code command if not available)
     """
-    threads = []
+    global _version_check_thread, _setup_thread
 
     # Version check thread
-    version_thread = threading.Thread(target=_check_for_updates, daemon=True, name="version_check")
-    threads.append(version_thread)
+    _version_check_thread = threading.Thread(target=_check_for_updates, daemon=True, name="version_check")
 
     # Auto-setup thread
-    setup_thread = threading.Thread(target=_auto_setup_command, daemon=True, name="auto_setup")
-    threads.append(setup_thread)
+    _setup_thread = threading.Thread(target=_auto_setup_command, daemon=True, name="auto_setup")
 
     # Start all threads
-    for thread in threads:
-        thread.start()
+    _version_check_thread.start()
+    _setup_thread.start()
 
-    return threads
+
+def wait_for_version_check(timeout: float = 2.0):
+    """Wait for version check to complete (with timeout)"""
+    if _version_check_thread and _version_check_thread.is_alive():
+        _version_check_thread.join(timeout=timeout)
 
 
 def get_setup_result() -> Optional[tuple]:
@@ -435,32 +458,17 @@ def apply_update_on_exit():
             else:
                 subprocess.Popen(["bash", script])
 
-def check_and_prompt_update() -> bool:
-    """Check for updates and prompt user if available. Returns True if user wants to update."""
+def show_update_notification():
+    """Show a simple update notification if versions differ."""
     if not _update_available:
-        return False
+        return
 
     local_version = get_version()
     console.print(
-        f"\n[{COLORS['warning']}]╔══════════════════════════════════════════════╗[/]"
+        f"[{COLORS['warning']}]⚠  New version available (v{_update_available}). "
+        f"Use [bold]/version[/bold] for more info.[/]"
     )
-    console.print(
-        f"[{COLORS['warning']}]║[/]  [bold]Update available![/] v{local_version} -> v{_update_available}       [{COLORS['warning']}]║[/]"
-    )
-    console.print(
-        f"[{COLORS['warning']}]╚══════════════════════════════════════════════╝[/]\n"
-    )
-
-    console.print(f"[{COLORS['primary']}]Would you like to update now? (y/n):[/] ", end="")
-
-    try:
-        response = input().strip().lower()
-        if response in ["y", "yes", "s", "si"]:
-            return perform_auto_update()
-    except (EOFError, KeyboardInterrupt):
-        pass
-
-    return False
+    console.print()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Input Handler with Queue Support
@@ -672,7 +680,7 @@ def main():
     console.print()
 
     # Check for background initialization results
-    time.sleep(0.3)  # Small delay to allow background tasks to complete
+    time.sleep(0.3)  # Small delay to allow setup to complete
 
     # Show setup result if it was performed (not for first-run users, they already saw it)
     if not user_config.is_first_run:
@@ -683,9 +691,11 @@ def main():
                 console.print(f"[{COLORS['success']}]{msg}[/]")
                 console.print()
 
-    # Check for updates and prompt user
-    if check_and_prompt_update():
-        console.print(f"\n[{COLORS['muted']}]Update will be applied after restart.[/]\n")
+    # Wait for version check to complete (with 2 second timeout)
+    wait_for_version_check(timeout=2.0)
+
+    # Show update notification if available
+    show_update_notification()
 
     while True:
         try:

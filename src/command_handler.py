@@ -170,7 +170,7 @@ class CommandHandler:
             return True, None
 
         elif name == "version":
-            from .main import get_version, get_remote_version
+            from .main import get_version, get_remote_version, _is_newer_version
             local_version = get_version()
             console.print(f"\n[bold {COLORS['primary']}]Dymo Code[/]")
             console.print(f"[{COLORS['muted']}]https://github.com/TPEOficial/dymo-code[/]\n")
@@ -181,11 +181,13 @@ class CommandHandler:
             remote_version = get_remote_version()
 
             if remote_version:
-                if remote_version != local_version:
+                if _is_newer_version(remote_version, local_version):
                     console.print(f"  [bold]Remote version:[/] v{remote_version} [{COLORS['warning']}](update available)[/]")
                     console.print(f"\n  [{COLORS['muted']}]Download: https://github.com/TPEOficial/dymo-code/releases[/]")
-                else:
+                elif remote_version == local_version:
                     console.print(f"  [bold]Remote version:[/] v{remote_version} [{COLORS['success']}](up to date)[/]    ")
+                else:
+                    console.print(f"  [bold]Remote version:[/] v{remote_version} [{COLORS['secondary']}](you have a newer version)[/]")
             else:
                 console.print(f"  [bold]Remote version:[/] [{COLORS['error']}]Could not fetch[/]              ")
 
