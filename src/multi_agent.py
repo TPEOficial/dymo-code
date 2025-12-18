@@ -56,6 +56,8 @@ class AgentTask:
     agent_id: Optional[str] = None
     parent_task_id: Optional[str] = None  # For subtasks
     progress: float = 0.0
+    depends_on: List[str] = field(default_factory=list)  # Task IDs this depends on
+    order: int = 0  # Execution order for sequential tasks
 
     @property
     def duration(self) -> float:
@@ -175,10 +177,21 @@ class AgentWorker:
                         "tool_calls": [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments}} for tc in tool_calls]
                     })
 
-                    # Execute tools in parallel for speed
+                    # Execute tools
                     for tc in tool_calls:
                         try:
-                            args = tc.arguments if isinstance(tc.arguments, dict) else {}
+                            # Parse arguments - can be string JSON or dict
+                            if isinstance(tc.arguments, dict):
+                                args = tc.arguments
+                            elif isinstance(tc.arguments, str):
+                                import json
+                                try:
+                                    args = json.loads(tc.arguments) if tc.arguments.strip() else {}
+                                except json.JSONDecodeError:
+                                    args = {}
+                            else:
+                                args = {}
+
                             result = execute_tool(tc.name, args)
                             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)[:3000]})
                         except Exception as e:
@@ -317,6 +330,47 @@ class AgentPool:
         for task in tasks:
             task_id = self.submit_task(task, callback)
             task_ids.append(task_id)
+        return task_ids
+
+    def submit_tasks_sequential(
+        self,
+        tasks: List[AgentTask],
+        callback: Callable = None,
+        pass_context: bool = True
+    ) -> List[str]:
+        """
+        Submit tasks to run sequentially (one after another).
+        Each task waits for the previous to complete.
+        If pass_context=True, previous task results are added to the next task's context.
+        """
+        task_ids = []
+        previous_results = []
+
+        for i, task in enumerate(tasks):
+            task.order = i
+
+            # Add context from previous tasks if enabled
+            if pass_context and previous_results:
+                context = "\n\n=== Context from previous tasks ===\n"
+                for prev_desc, prev_result in previous_results:
+                    context += f"\n[{prev_desc}]:\n{prev_result[:2000]}\n"
+                context += "\n=== End of context ===\n\n"
+                task.prompt = context + task.prompt
+
+            # Submit and wait for completion
+            task_id = self.submit_task(task, callback)
+            task_ids.append(task_id)
+
+            # Wait for this task to complete before moving to next
+            result = self.get_task_result(task_id, timeout=120)
+
+            # Store result for context passing
+            if task.status == TaskStatus.COMPLETED:
+                previous_results.append((task.description, task.result))
+            elif task.status == TaskStatus.FAILED:
+                # If a task fails, we can still continue or stop
+                previous_results.append((task.description, f"FAILED: {task.error}"))
+
         return task_ids
 
     def get_task(self, task_id: str) -> Optional[AgentTask]:
@@ -505,18 +559,24 @@ MULTI_AGENT_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "spawn_agents",
-            "description": """Spawn multiple AI agents to work on tasks in parallel. Use this when:
-- You need to do multiple independent tasks simultaneously
-- Tasks don't depend on each other's results
-- You want to speed up work by parallelizing
+            "description": """Spawn AI agents to work on tasks. Automatically detects if tasks should run in parallel or sequentially.
 
-Each agent works independently and reports back results. Do NOT use for sequential tasks that depend on each other.""",
+IMPORTANT - Dependency Detection:
+- If tasks have dependencies (one needs the result of another), they run SEQUENTIALLY
+- If tasks are independent, they run in PARALLEL for speed
+- Keywords that indicate dependencies: "document", "review", "based on", "after", "using the", "from the"
+
+Examples:
+- PARALLEL: "Create a Python script" + "Create a README" (independent)
+- SEQUENTIAL: "Create a project" + "Document the project" (second needs first)
+
+Set sequential=true to force sequential execution when one task depends on another's output.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "tasks": {
                         "type": "array",
-                        "description": "List of tasks to execute in parallel",
+                        "description": "List of tasks to execute",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -527,10 +587,20 @@ Each agent works independently and reports back results. Do NOT use for sequenti
                                 "prompt": {
                                     "type": "string",
                                     "description": "Detailed instructions for the agent"
+                                },
+                                "depends_on_previous": {
+                                    "type": "boolean",
+                                    "description": "Set to true if this task depends on the previous task's result",
+                                    "default": False
                                 }
                             },
                             "required": ["description", "prompt"]
                         }
+                    },
+                    "sequential": {
+                        "type": "boolean",
+                        "description": "Force sequential execution (one task after another). Use when tasks have dependencies. Default: auto-detect",
+                        "default": False
                     },
                     "wait_for_results": {
                         "type": "boolean",
@@ -563,6 +633,102 @@ Each agent works independently and reports back results. Do NOT use for sequenti
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Dependency Detection (AI-powered, language-agnostic)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DEPENDENCY_CHECK_PROMPT = """Analyze these tasks and determine if they have dependencies (one task needs the result of another).
+
+Tasks:
+{tasks}
+
+Rules:
+- If Task 2+ needs files/code/output created by Task 1, they are DEPENDENT
+- If Task 2+ documents, reviews, tests, or modifies what Task 1 creates, they are DEPENDENT
+- If tasks work on completely separate things, they are INDEPENDENT
+
+Reply with ONLY one word: DEPENDENT or INDEPENDENT"""
+
+
+def detect_dependencies(tasks_data: List[Dict]) -> bool:
+    """
+    Detect if tasks have dependencies using AI analysis.
+    Works with any language. Returns True if tasks should run sequentially.
+    """
+    if len(tasks_data) < 2:
+        return False
+
+    # Check explicit dependency flags first (fast path)
+    for task in tasks_data[1:]:
+        if task.get("depends_on_previous", False):
+            return True
+
+    # Use AI to analyze dependencies (language-agnostic)
+    try:
+        from .config import UTILITY_MODEL
+
+        # Format tasks for analysis
+        tasks_text = ""
+        for i, task in enumerate(tasks_data, 1):
+            desc = task.get("description", "")
+            prompt = task.get("prompt", "")[:200]  # Limit prompt length
+            tasks_text += f"Task {i}: {desc}\n  Details: {prompt}\n\n"
+
+        analysis_prompt = DEPENDENCY_CHECK_PROMPT.format(tasks=tasks_text)
+
+        # Use cached client for speed
+        cached = AgentWorker._get_shared_client(UTILITY_MODEL)
+        client = cached["client"]
+        model_id = cached["model_id"]
+
+        # Quick, non-streaming call for speed
+        response_text = ""
+        for chunk in client.stream_chat(
+            messages=[{"role": "user", "content": analysis_prompt}],
+            model=model_id,
+            tools=None
+        ):
+            if chunk.content:
+                response_text += chunk.content
+
+        # Parse response
+        response_lower = response_text.strip().lower()
+
+        if "dependent" in response_lower and "independent" not in response_lower:
+            return True
+        elif "independent" in response_lower:
+            return False
+        else:
+            # If unclear, assume dependent to be safe
+            return "depend" in response_lower
+
+    except Exception as e:
+        # If AI check fails, fall back to simple heuristic
+        from .logger import log_debug
+        log_debug(f"AI dependency check failed, using fallback: {e}")
+        return _fallback_dependency_check(tasks_data)
+
+
+def _fallback_dependency_check(tasks_data: List[Dict]) -> bool:
+    """
+    Simple fallback dependency detection (keyword-based).
+    Used when AI check fails.
+    """
+    # Common dependency indicators (multi-language)
+    dependency_indicators = [
+        "document", "review", "test", "deploy", "publish", "validate", "check",
+        "both", "all", "ambos", "todos", "両方", "所有", "alle", "tous", "tutti",
+        "after", "based on", "using", "from the",
+    ]
+
+    for task in tasks_data[1:]:
+        combined = (task.get("description", "") + " " + task.get("prompt", "")).lower()
+        if any(ind in combined for ind in dependency_indicators):
+            return True
+
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Global Instance
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -575,10 +741,14 @@ agent_pool = AgentPool()
 
 def execute_multi_agent_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
     """Execute a multi-agent tool"""
+    from .ui import console, display_info
+    from rich.spinner import Spinner
+    from rich.live import Live
 
     if tool_name == "spawn_agents":
         tasks_data = arguments.get("tasks", [])
         wait = arguments.get("wait_for_results", True)
+        force_sequential = arguments.get("sequential", False)
 
         if not tasks_data:
             return "Error: No tasks provided"
@@ -586,30 +756,46 @@ def execute_multi_agent_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
         if len(tasks_data) > agent_pool.MAX_WORKERS:
             return f"Error: Maximum {agent_pool.MAX_WORKERS} parallel tasks allowed"
 
+        # Detect if tasks have dependencies (using AI)
+        if force_sequential:
+            has_dependencies = True
+        else:
+            console.print()
+            console.print(f"[dim]Analyzing task dependencies...[/]", end=" ")
+            has_dependencies = detect_dependencies(tasks_data)
+            console.print(f"[dim]{'Sequential' if has_dependencies else 'Parallel'}[/]")
+
         # Create tasks
         tasks = []
-        for task_data in tasks_data:
+        for i, task_data in enumerate(tasks_data):
             task = agent_pool.create_task(
                 description=task_data.get("description", "Unnamed task"),
                 prompt=task_data.get("prompt", "")
             )
+            task.order = i
             tasks.append(task)
 
-        # Submit all tasks
-        task_ids = agent_pool.submit_tasks_parallel(tasks)
+        # Choose execution mode based on dependencies
+        if has_dependencies:
+            # Sequential execution - notify user
+            console.print()
+            console.print(f"[bold yellow]Dependencies detected - running {len(tasks)} tasks sequentially[/]")
+            console.print(f"[dim]Each task will wait for the previous to complete and receive its context[/]")
+            console.print()
 
-        if wait:
-            # Wait for all to complete
-            results = agent_pool.wait_all(task_ids, timeout=120)  # 2 min timeout max
+            # Run sequentially with context passing
+            task_ids = agent_pool.submit_tasks_sequential(tasks, pass_context=True)
 
             # Format results
-            output = ["=== Parallel Agent Results ===\n"]
+            output = ["=== Sequential Agent Results ==="]
+            output.append(f"(Tasks ran in order due to dependencies)\n")
 
-            for task_id in task_ids:
+            for i, task_id in enumerate(task_ids):
                 task = agent_pool.get_task(task_id)
                 if task:
-                    output.append(f"\n--- {task.description} ---")
+                    output.append(f"\n--- [{i+1}/{len(tasks)}] {task.description} ---")
                     output.append(f"Status: {task.status.value}")
+                    output.append(f"Duration: {task.duration:.1f}s")
                     if task.result:
                         output.append(f"Result:\n{task.result[:3000]}")
                     if task.error:
@@ -618,8 +804,37 @@ def execute_multi_agent_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
 
             return "\n".join(output)
         else:
-            # Return task IDs for later checking
-            return f"Started {len(task_ids)} agents. Task IDs: {', '.join(task_ids)}\nUse check_agent_tasks to monitor progress."
+            # Parallel execution
+            console.print()
+            console.print(f"[bold green]No dependencies - running {len(tasks)} tasks in parallel[/]")
+            console.print()
+
+            task_ids = agent_pool.submit_tasks_parallel(tasks)
+
+            if wait:
+                # Wait for all to complete
+                results = agent_pool.wait_all(task_ids, timeout=120)  # 2 min timeout max
+
+                # Format results
+                output = ["=== Parallel Agent Results ==="]
+                output.append(f"({len(tasks)} tasks ran simultaneously)\n")
+
+                for task_id in task_ids:
+                    task = agent_pool.get_task(task_id)
+                    if task:
+                        output.append(f"\n--- {task.description} ---")
+                        output.append(f"Status: {task.status.value}")
+                        output.append(f"Duration: {task.duration:.1f}s")
+                        if task.result:
+                            output.append(f"Result:\n{task.result[:3000]}")
+                        if task.error:
+                            output.append(f"Error: {task.error}")
+                        output.append("")
+
+                return "\n".join(output)
+            else:
+                # Return task IDs for later checking
+                return f"Started {len(task_ids)} agents in parallel. Task IDs: {', '.join(task_ids)}\nUse check_agent_tasks to monitor progress."
 
     elif tool_name == "check_agent_tasks":
         task_ids = arguments.get("task_ids", [])

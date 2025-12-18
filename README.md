@@ -65,12 +65,13 @@ $ python run.py
 | Name                              | Status              | Active |
 |-----------------------------------|---------------------|--------|
 | AI Chat                           | In development      |   ✅   |
-| Parallel Multi-Agent	            | In development	    |   ⚠️   |
+| Parallel Multi-Agent	            | Active              |   ✅   |
 | Support for multiple AI providers | In development      |   ⚠️   |
 | Jailbreak Mode                    | In development      |   ⚠️   |
 | MCP Support                       | In BETA Phase       |   ⚠️   |
+| Multi-Key Pool System             | Active              |   ✅   |
 | Theme system                      | Active              |   ✅   |
-| Search engine with bypass         | In development      |   ⚠️   |
+| Search engine with bypass         | Active              |   ✅   |
 
 ### Supported AI Models
 
@@ -86,10 +87,31 @@ $ python run.py
 | OpenRouter (Coming Soon)       | To be specified shortly                       | API         | None    |
 | Perplexity (Coming Soon)       | To be specified shortly                       | API         | None    |
 
+And coming soon...
+
+# Frequently Asked Questions
+
+<details>
+  <summary>What is the Multi-Key Pool System?</summary>
+  
+  Multi-Key Pool is a system that automatically manages all the API keys from providers that you define internally in order to try to avoid rate limits and credit consumption.
+
+  This system automatically consumes the different API keys and providers that you define in order to avoid consumption limitations from external providers.
+
+  You can view your API Keys by running the command `/apikeys`.
+</details>
+
+<details>
+  <summary>Which is the best provider?</summary>
+  
+  The best provider is undoubtedly Anthropic with Claude in its latest version, but this option is the most expensive and limited of all.
+
+  As an alternative option to avoid having to run it locally, we recommend **Groq**, which allows up to ~14,500K on average depending on the model per day, being quite fast and free.
+</details>
+
 #### Author
  - FJRG007
  - Email: [fjrg2007@tpeoficial.com](mailto:fjrg2007@tpeoficial.com)
-
 
 #### License
 The founder of the project, [TPEOficial](https://github.com/TPEOficial/), reserves the right to modify the license at any time.

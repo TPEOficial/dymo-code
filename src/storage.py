@@ -199,12 +199,13 @@ class UserConfig:
         return get_config_directory()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # API Keys Management
+    # API Keys Management (Single Key - Legacy)
     # ═══════════════════════════════════════════════════════════════════════════
 
     def set_api_key(self, provider: str, api_key: str):
         """
-        Set an API key for a provider.
+        Set an API key for a provider (legacy single-key method).
+        For multi-key support, use add_api_key instead.
         Provider should be: groq, openrouter, anthropic, openai
         """
         key_name = f"{provider.upper()}_API_KEY"
@@ -212,27 +213,36 @@ class UserConfig:
         self._save_api_keys()
 
     def get_api_key(self, provider: str) -> Optional[str]:
-        """Get an API key for a provider"""
+        """Get primary API key for a provider (first key in list or single key)"""
+        # First check multi-key list
+        keys_list = self.get_api_keys_list(provider)
+        if keys_list:
+            return keys_list[0]
+        # Fallback to legacy single key
         key_name = f"{provider.upper()}_API_KEY"
         return self._api_keys.get(key_name)
 
     def delete_api_key(self, provider: str):
-        """Delete an API key for a provider"""
+        """Delete all API keys for a provider"""
         key_name = f"{provider.upper()}_API_KEY"
+        list_key = f"{provider.upper()}_API_KEYS"
         if key_name in self._api_keys:
             del self._api_keys[key_name]
-            self._save_api_keys()
+        if list_key in self._api_keys:
+            del self._api_keys[list_key]
+        self._save_api_keys()
 
     def get_all_api_keys(self) -> dict:
         """Get all configured API keys (masked)"""
         masked = {}
         for key, value in self._api_keys.items():
-            if value:
+            if value and not key.endswith("_KEYS"):  # Skip list keys
                 # Show only first 4 and last 4 characters
-                if len(value) > 12:
-                    masked[key] = f"{value[:4]}...{value[-4:]}"
-                else:
-                    masked[key] = "****"
+                if isinstance(value, str):
+                    if len(value) > 12:
+                        masked[key] = f"{value[:4]}...{value[-4:]}"
+                    else:
+                        masked[key] = "****"
         return masked
 
     def get_raw_api_key(self, key_name: str) -> Optional[str]:
@@ -243,8 +253,121 @@ class UserConfig:
         """Load all stored API keys into environment variables"""
         import os
         for key, value in self._api_keys.items():
-            if value and key not in os.environ:
-                os.environ[key] = value
+            if value and key not in os.environ and not key.endswith("_KEYS"):
+                if isinstance(value, str):
+                    os.environ[key] = value
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Multi-API Keys Management (New)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def add_api_key(self, provider: str, api_key: str) -> bool:
+        """
+        Add an API key to a provider's key list.
+        Returns True if key was added, False if already exists.
+        """
+        list_key = f"{provider.upper()}_API_KEYS"
+
+        if list_key not in self._api_keys:
+            self._api_keys[list_key] = []
+
+        # Migrate legacy single key if exists
+        legacy_key = f"{provider.upper()}_API_KEY"
+        if legacy_key in self._api_keys and self._api_keys[legacy_key]:
+            legacy_val = self._api_keys[legacy_key]
+            if legacy_val not in self._api_keys[list_key]:
+                self._api_keys[list_key].append(legacy_val)
+
+        # Check if key already exists
+        if api_key in self._api_keys[list_key]:
+            return False
+
+        self._api_keys[list_key].append(api_key)
+
+        # Also set as primary for backward compatibility
+        self._api_keys[legacy_key] = self._api_keys[list_key][0]
+
+        self._save_api_keys()
+        return True
+
+    def remove_api_key_by_index(self, provider: str, index: int) -> bool:
+        """Remove an API key by index from provider's list"""
+        list_key = f"{provider.upper()}_API_KEYS"
+
+        if list_key not in self._api_keys:
+            return False
+
+        keys_list = self._api_keys[list_key]
+        if not isinstance(keys_list, list) or index < 0 or index >= len(keys_list):
+            return False
+
+        keys_list.pop(index)
+
+        # Update primary key
+        legacy_key = f"{provider.upper()}_API_KEY"
+        if keys_list:
+            self._api_keys[legacy_key] = keys_list[0]
+        else:
+            if legacy_key in self._api_keys:
+                del self._api_keys[legacy_key]
+
+        self._save_api_keys()
+        return True
+
+    def get_api_keys_list(self, provider: str) -> list:
+        """Get list of all API keys for a provider"""
+        list_key = f"{provider.upper()}_API_KEYS"
+        keys = self._api_keys.get(list_key, [])
+
+        if isinstance(keys, list):
+            return keys
+
+        # Fallback to legacy single key
+        legacy_key = f"{provider.upper()}_API_KEY"
+        single_key = self._api_keys.get(legacy_key)
+        if single_key:
+            return [single_key]
+
+        return []
+
+    def set_api_keys_list(self, provider: str, keys: list):
+        """Set the full list of API keys for a provider"""
+        list_key = f"{provider.upper()}_API_KEYS"
+        legacy_key = f"{provider.upper()}_API_KEY"
+
+        self._api_keys[list_key] = keys
+
+        # Update primary for backward compatibility
+        if keys:
+            self._api_keys[legacy_key] = keys[0]
+        elif legacy_key in self._api_keys:
+            del self._api_keys[legacy_key]
+
+        self._save_api_keys()
+
+    def get_api_key_count(self, provider: str) -> int:
+        """Get number of API keys configured for a provider"""
+        return len(self.get_api_keys_list(provider))
+
+    def get_all_providers_keys_info(self) -> dict:
+        """Get information about all configured API keys per provider"""
+        providers = ["groq", "openrouter", "anthropic", "openai"]
+        info = {}
+
+        for provider in providers:
+            keys = self.get_api_keys_list(provider)
+            masked_keys = []
+            for key in keys:
+                if len(key) > 12:
+                    masked_keys.append(f"{key[:4]}...{key[-4:]}")
+                else:
+                    masked_keys.append("****")
+            info[provider] = {
+                "count": len(keys),
+                "keys": masked_keys
+            }
+
+        return info
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -324,7 +324,8 @@ def display_code_execution_result(code: str, output: str, has_error: bool = Fals
 
 def display_error(message: str):
     """Display an error message"""
-    console.print(Panel(message, border_style=f"{COLORS['error']}", box=ROUNDED))
+    console.print()  # Newline before panel to avoid deformation
+    console.print(Panel(f"Error: {message}", border_style=f"{COLORS['error']}", box=ROUNDED))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Diff Display (Git-style with line numbers)

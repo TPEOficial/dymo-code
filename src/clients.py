@@ -1,6 +1,7 @@
 """
 AI Client abstraction layer for Dymo Code
 Supports multiple providers: Groq, OpenRouter, Anthropic (Claude), OpenAI, Ollama
+With automatic API key rotation on rate limits or credit exhaustion
 """
 
 import os
@@ -15,6 +16,9 @@ from .config import (
     ModelConfig, PROVIDER_CONFIGS
 )
 from .logger import log_api_error, log_error, log_debug
+from .api_key_manager import (
+    api_key_manager, is_rate_limit_error, is_credit_error, is_auth_error
+)
 
 # Groq built-in tools for code execution and web search
 GROQ_BUILTIN_TOOLS = [
@@ -77,7 +81,9 @@ class BaseAIClient(ABC):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class GroqClient(BaseAIClient):
-    """Groq API client"""
+    """Groq API client with automatic key rotation"""
+
+    PROVIDER = "groq"
 
     def __init__(self):
         self._client = None
@@ -85,7 +91,11 @@ class GroqClient(BaseAIClient):
 
     @property
     def api_key(self) -> Optional[str]:
-        """Get API key from environment (dynamic)"""
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
+        # Fallback to environment
         return os.environ.get("GROQ_API_KEY")
 
     def _get_client(self):
@@ -100,7 +110,29 @@ class GroqClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("GROQ_API_KEY"))
+
+    def _handle_error_and_retry(self, error: Exception, messages, model, tools, retry_count: int = 0):
+        """Handle error with potential key rotation and retry"""
+        error_str = str(error)
+        max_retries = 3
+
+        if retry_count >= max_retries:
+            raise error
+
+        # Check if error warrants key rotation
+        if is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str):
+            rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+
+            if rotated and new_key:
+                log_debug(f"Groq: Rotated to new API key after error: {error_str[:50]}")
+                # Reset client to use new key
+                self._client = None
+                self._current_api_key = None
+                # Retry with new key
+                return self.stream_chat(messages, model, tools, _retry_count=retry_count + 1)
+
+        raise error
 
     def _is_compound_model(self, model: str) -> bool:
         """Check if the model is a Groq Compound model"""
@@ -114,7 +146,8 @@ class GroqClient(BaseAIClient):
         self,
         messages: List[Dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
@@ -153,6 +186,15 @@ class GroqClient(BaseAIClient):
                     "tool_count": len(tools) if tools else 0
                 }
             )
+            # Try key rotation and retry
+            if _retry_count < 3 and (is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str)):
+                rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+                if rotated and new_key:
+                    log_debug(f"Groq: Rotated to new API key, retrying...")
+                    self._client = None
+                    self._current_api_key = None
+                    yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                    return
             raise
 
         # Track tool calls across chunks
@@ -486,7 +528,9 @@ class GroqClient(BaseAIClient):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class OpenRouterClient(BaseAIClient):
-    """OpenRouter API client (OpenAI-compatible)"""
+    """OpenRouter API client (OpenAI-compatible) with automatic key rotation"""
+
+    PROVIDER = "openrouter"
 
     def __init__(self):
         self._client = None
@@ -494,7 +538,10 @@ class OpenRouterClient(BaseAIClient):
 
     @property
     def api_key(self) -> Optional[str]:
-        """Get API key from environment (dynamic)"""
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
         return os.environ.get("OPENROUTER_API_KEY")
 
     def _get_client(self):
@@ -512,13 +559,14 @@ class OpenRouterClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENROUTER_API_KEY"))
 
     def stream_chat(
         self,
         messages: List[Dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
@@ -546,6 +594,15 @@ class OpenRouterClient(BaseAIClient):
                     "tool_count": len(tools) if tools else 0
                 }
             )
+            # Try key rotation and retry
+            if _retry_count < 3 and (is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str)):
+                rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+                if rotated and new_key:
+                    log_debug(f"OpenRouter: Rotated to new API key, retrying...")
+                    self._client = None
+                    self._current_api_key = None
+                    yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                    return
             raise
 
         # Track tool calls across chunks
@@ -617,7 +674,9 @@ class OpenRouterClient(BaseAIClient):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class AnthropicClient(BaseAIClient):
-    """Anthropic Claude API client"""
+    """Anthropic Claude API client with automatic key rotation"""
+
+    PROVIDER = "anthropic"
 
     def __init__(self):
         self._client = None
@@ -625,7 +684,10 @@ class AnthropicClient(BaseAIClient):
 
     @property
     def api_key(self) -> Optional[str]:
-        """Get API key from environment (dynamic)"""
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
         return os.environ.get("ANTHROPIC_API_KEY")
 
     def _get_client(self):
@@ -643,7 +705,7 @@ class AnthropicClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("ANTHROPIC_API_KEY"))
 
     def _convert_tools_to_anthropic_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert OpenAI-style tools to Anthropic format"""
@@ -704,7 +766,8 @@ class AnthropicClient(BaseAIClient):
         self,
         messages: List[Dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
@@ -771,12 +834,22 @@ class AnthropicClient(BaseAIClient):
                             yield StreamChunk(finish_reason="stop")
 
         except Exception as e:
+            error_str = str(e)
             log_api_error(
                 provider="anthropic",
                 model=model,
-                error=str(e),
+                error=error_str,
                 request_context={"message_count": len(messages), "has_tools": bool(tools)}
             )
+            # Try key rotation and retry
+            if _retry_count < 3 and (is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str)):
+                rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+                if rotated and new_key:
+                    log_debug(f"Anthropic: Rotated to new API key, retrying...")
+                    self._client = None
+                    self._current_api_key = None
+                    yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                    return
             raise
 
 
@@ -785,7 +858,9 @@ class AnthropicClient(BaseAIClient):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class OpenAIClient(BaseAIClient):
-    """OpenAI API client"""
+    """OpenAI API client with automatic key rotation"""
+
+    PROVIDER = "openai"
 
     def __init__(self):
         self._client = None
@@ -793,7 +868,10 @@ class OpenAIClient(BaseAIClient):
 
     @property
     def api_key(self) -> Optional[str]:
-        """Get API key from environment (dynamic)"""
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
         return os.environ.get("OPENAI_API_KEY")
 
     def _get_client(self):
@@ -808,13 +886,14 @@ class OpenAIClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENAI_API_KEY"))
 
     def stream_chat(
         self,
         messages: List[Dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
     ) -> Iterator[StreamChunk]:
         client = self._get_client()
         if not client:
@@ -841,12 +920,22 @@ class OpenAIClient(BaseAIClient):
         try:
             stream = client.chat.completions.create(**kwargs)
         except Exception as e:
+            error_str = str(e)
             log_api_error(
                 provider="openai",
                 model=model,
-                error=str(e),
+                error=error_str,
                 request_context={"message_count": len(messages), "has_tools": bool(tools)}
             )
+            # Try key rotation and retry
+            if _retry_count < 3 and (is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str)):
+                rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+                if rotated and new_key:
+                    log_debug(f"OpenAI: Rotated to new API key, retrying...")
+                    self._client = None
+                    self._current_api_key = None
+                    yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                    return
             raise
 
         current_tool_calls: Dict[int, Dict[str, str]] = {}

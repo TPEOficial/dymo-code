@@ -468,13 +468,14 @@ class CommandHandler:
             return True, None
 
         # ═══════════════════════════════════════════════════════════════════════
-        # API Keys Commands
+        # API Keys Commands (Multi-Key Support)
         # ═══════════════════════════════════════════════════════════════════════
 
         elif name == "setapikey":
             if not args:
                 display_error("Usage: /setapikey <provider> <key>")
                 console.print(f"[{COLORS['muted']}]Providers: groq, openrouter, anthropic, openai[/]")
+                console.print(f"[{COLORS['muted']}]You can add multiple keys per provider for auto-rotation[/]")
                 return True, None
 
             parts = args.split(maxsplit=1)
@@ -490,43 +491,107 @@ class CommandHandler:
                 display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
                 return True, None
 
-            user_config.set_api_key(provider, api_key)
-            # Also set in current environment so it takes effect immediately
-            import os
-            os.environ[f"{provider.upper()}_API_KEY"] = api_key
-            display_success(f"API key for {provider.upper()} saved successfully")
+            # Add key to the pool (supports multiple keys)
+            added = user_config.add_api_key(provider, api_key)
+            if added:
+                # Also set in current environment so it takes effect immediately
+                import os
+                os.environ[f"{provider.upper()}_API_KEY"] = api_key
+                # Update the API key manager
+                from .api_key_manager import api_key_manager
+                api_key_manager.add_key(provider, api_key)
+
+                key_count = user_config.get_api_key_count(provider)
+                display_success(f"API key for {provider.upper()} added (total: {key_count} key{'s' if key_count > 1 else ''})")
+                if key_count > 1:
+                    console.print(f"[{COLORS['muted']}]Keys will auto-rotate on rate limit errors[/]")
+            else:
+                display_info(f"This API key already exists for {provider.upper()}")
             return True, None
 
         elif name == "apikeys":
-            keys = user_config.get_all_api_keys()
-            if not keys:
+            from .api_key_manager import api_key_manager
+            providers_info = user_config.get_all_providers_keys_info()
+
+            has_keys = any(info['count'] > 0 for info in providers_info.values())
+
+            if not has_keys:
                 display_info("No API keys configured. Use /setapikey <provider> <key>")
+                console.print(f"[{COLORS['muted']}]You can add multiple keys per provider for auto-rotation on rate limits[/]\n")
             else:
-                console.print(f"\n[bold {COLORS['secondary']}]Configured API Keys[/]\n")
-                for key_name, masked_value in keys.items():
-                    provider = key_name.replace("_API_KEY", "")
-                    console.print(f"  [{COLORS['accent']}]{provider}[/]: {masked_value}")
-                console.print()
+                console.print(f"\n[bold {COLORS['secondary']}]Configured API Keys (Multi-Key Pool)[/]\n")
+
+                for provider, info in providers_info.items():
+                    if info['count'] > 0:
+                        # Get detailed info from key manager
+                        manager_info = api_key_manager.get_provider_info(provider)
+                        status_icon = "[green]●[/]" if manager_info.get('has_available') else "[red]●[/]"
+
+                        console.print(f"  {status_icon} [{COLORS['accent']}]{provider.upper()}[/] ({info['count']} key{'s' if info['count'] > 1 else ''})")
+
+                        # Show individual keys with status
+                        keys_detail = manager_info.get('keys', [])
+                        for i, key_info in enumerate(keys_detail):
+                            current = " [cyan]◀ active[/]" if key_info.get('is_current') else ""
+                            status = key_info.get('status', 'unknown')
+                            status_color = {
+                                'active': 'green',
+                                'rate_limited': 'yellow',
+                                'exhausted': 'red',
+                                'invalid': 'red',
+                                'cooldown': 'yellow'
+                            }.get(status, 'white')
+
+                            masked = key_info.get('masked_key', info['keys'][i] if i < len(info['keys']) else '****')
+                            console.print(f"      [{i+1}] {masked} [{status_color}]({status})[/]{current}")
+
+                        console.print()
+
+                console.print(f"[{COLORS['muted']}]Keys auto-rotate on rate limit or credit errors[/]")
+                console.print(f"[{COLORS['muted']}]Delete keys with: /delapikey <provider> <index>[/]\n")
             return True, None
 
         elif name == "delapikey":
             if not args:
-                display_error("Usage: /delapikey <provider>")
+                display_error("Usage: /delapikey <provider> [index]")
+                console.print(f"[{COLORS['muted']}]Use /apikeys to see key indices[/]")
                 return True, None
 
-            provider = args.strip().lower()
+            parts = args.strip().split()
+            provider = parts[0].lower()
             valid_providers = ["groq", "openrouter", "anthropic", "openai"]
+
             if provider not in valid_providers:
                 display_error(f"Invalid provider. Use: {', '.join(valid_providers)}")
                 return True, None
 
-            user_config.delete_api_key(provider)
-            # Also remove from current environment
-            import os
-            key_name = f"{provider.upper()}_API_KEY"
-            if key_name in os.environ:
-                del os.environ[key_name]
-            display_success(f"API key for {provider.upper()} deleted")
+            # Check if index is provided
+            if len(parts) >= 2:
+                try:
+                    index = int(parts[1]) - 1  # Convert to 0-based index
+                    if user_config.remove_api_key_by_index(provider, index):
+                        display_success(f"API key #{index+1} for {provider.upper()} deleted")
+                        # Update environment if needed
+                        remaining_keys = user_config.get_api_keys_list(provider)
+                        import os
+                        key_name = f"{provider.upper()}_API_KEY"
+                        if remaining_keys:
+                            os.environ[key_name] = remaining_keys[0]
+                        elif key_name in os.environ:
+                            del os.environ[key_name]
+                    else:
+                        display_error(f"Invalid key index. Use /apikeys to see available keys.")
+                except ValueError:
+                    display_error("Invalid index. Use a number (e.g., /delapikey groq 1)")
+            else:
+                # No index - delete all keys for provider
+                user_config.delete_api_key(provider)
+                import os
+                key_name = f"{provider.upper()}_API_KEY"
+                if key_name in os.environ:
+                    del os.environ[key_name]
+                display_success(f"All API keys for {provider.upper()} deleted")
+
             return True, None
 
         elif name == "getapikey":
@@ -568,9 +633,19 @@ class CommandHandler:
                 api_key = input(f"  {provider_info['name']} API Key: ").strip()
 
                 if api_key:
-                    user_config.set_api_key(provider, api_key)
+                    # Add to multi-key pool
+                    added = user_config.add_api_key(provider, api_key)
                     os.environ[f"{provider.upper()}_API_KEY"] = api_key
-                    display_success(f"API key for {provider.upper()} saved successfully!")
+
+                    # Update the API key manager
+                    from .api_key_manager import api_key_manager
+                    api_key_manager.add_key(provider, api_key)
+
+                    if added:
+                        key_count = user_config.get_api_key_count(provider)
+                        display_success(f"API key for {provider.upper()} added (total: {key_count} key{'s' if key_count > 1 else ''})")
+                    else:
+                        display_info(f"This API key already exists for {provider.upper()}")
                 else:
                     display_info("No API key provided. Operation cancelled.")
 

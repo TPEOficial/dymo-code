@@ -352,11 +352,17 @@ class Agent:
 
     def _execute_single_tool(self, tc, tool_call_id: int) -> tuple:
         """Execute a single tool call and return results"""
-        # Parse arguments
+        # Parse arguments - handle both string JSON and dict
         try:
-            args = json.loads(tc.arguments) if tc.arguments else {}
+            if isinstance(tc.arguments, dict):
+                args = tc.arguments
+            elif isinstance(tc.arguments, str) and tc.arguments.strip():
+                args = json.loads(tc.arguments)
+            else:
+                args = {}
         except json.JSONDecodeError as e:
-            log_error("Failed to parse tool arguments", e, {"tool": tc.name, "args": tc.arguments})
+            log_error("Failed to parse tool arguments", e, {"tool": tc.name, "args": tc.arguments[:200] if tc.arguments else ""})
+            # Try to recover with empty args or continue
             args = {}
 
         # Get detail for status update
@@ -558,7 +564,8 @@ class Agent:
         except (RuntimeError, ValueError) as e:
             error_msg = str(e)
             log_error("Client initialization error", e)
-            console.print(Panel(error_msg, border_style=f"{COLORS['error']}", box=ROUNDED))
+            console.print()
+            console.print(Panel(f"Error: {error_msg}", border_style=f"{COLORS['error']}", box=ROUNDED))
             return error_msg
 
         # Compress context if needed (prevents token limit errors)
@@ -695,5 +702,6 @@ class Agent:
                 error=error_str,
                 request_context={"message_count": len(self.messages)}
             )
+            console.print()
             console.print(Panel(error_msg, border_style=f"{COLORS['error']}", box=ROUNDED))
             return error_msg
