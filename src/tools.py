@@ -2,7 +2,7 @@
 Tool definitions and implementations for Dymo Code
 """
 
-import os, subprocess
+import os, subprocess, shutil
 from typing import Dict, Any, Callable, List, Optional
 from dataclasses import dataclass
 
@@ -240,6 +240,120 @@ def run_command(command: str = "") -> str:
     except Exception as e: return f"Error: {str(e)}"
 
 
+def move_path(source: str = "", destination: str = "") -> str:
+    """Move a file or folder from source to destination"""
+    global _last_file_change
+
+    if not source: return "Error: source path is required"
+    if not destination: return "Error: destination path is required"
+
+    try:
+        # Check if source exists
+        if not os.path.exists(source):
+            return f"Error: Source '{source}' does not exist."
+
+        # Determine if source is file or directory
+        is_dir = os.path.isdir(source)
+        item_type = "folder" if is_dir else "file"
+
+        # If destination is a directory, move source into it
+        if os.path.isdir(destination):
+            dest_path = os.path.join(destination, os.path.basename(source))
+        else:
+            dest_path = destination
+            # Ensure parent directory exists
+            parent_dir = os.path.dirname(dest_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+        # Check if destination already exists
+        if os.path.exists(dest_path):
+            return f"Error: Destination '{dest_path}' already exists. Remove it first or choose a different name."
+
+        # Perform the move
+        shutil.move(source, dest_path)
+
+        # Track the change
+        _last_file_change = FileChange(
+            file_path=source,
+            change_type="move",
+            new_content=f"Moved to: {dest_path}",
+            success=True
+        )
+
+        return f"Successfully moved {item_type}: '{source}' → '{dest_path}'"
+
+    except PermissionError:
+        return f"Error: Permission denied to move '{source}'."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def delete_path(path: str = "", force: bool = False) -> str:
+    """Delete a file or folder (requires user confirmation)"""
+    global _last_file_change
+
+    if not path: return "Error: path is required"
+
+    try:
+        # Check if path exists
+        if not os.path.exists(path):
+            return f"Error: Path '{path}' does not exist."
+
+        # Determine if it's a file or directory
+        is_dir = os.path.isdir(path)
+        item_type = "folder" if is_dir else "file"
+
+        # Get size/count info for confirmation message
+        if is_dir:
+            # Count items in directory
+            item_count = sum(len(files) + len(dirs) for _, dirs, files in os.walk(path))
+            size_info = f"containing {item_count} items"
+        else:
+            size = os.path.getsize(path)
+            size_info = f"({_format_delete_size(size)})"
+
+        # Request permission before deleting
+        if not force:
+            try:
+                from .delete_permissions import check_and_request_delete_permission
+                delete_info = f"{item_type.capitalize()}: {path} {size_info}"
+                if not check_and_request_delete_permission(path, delete_info, is_dir):
+                    return f"Delete operation cancelled by user."
+            except ImportError:
+                # Fallback if permission module not available - deny by default for safety
+                return "Error: Delete permission system not available. Operation cancelled for safety."
+
+        # Perform the deletion
+        if is_dir:
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+
+        # Track the change
+        _last_file_change = FileChange(
+            file_path=path,
+            change_type="delete",
+            success=True
+        )
+
+        return f"Successfully deleted {item_type}: '{path}'"
+
+    except PermissionError:
+        return f"Error: Permission denied to delete '{path}'."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def _format_delete_size(size: int) -> str:
+    """Format file size for delete confirmation"""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024:
+            return f"{size:.1f}{unit}" if unit != "B" else f"{size}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tool Registry
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,6 +364,8 @@ TOOLS: Dict[str, Callable] = {
     "create_folder": create_folder,
     "create_file": create_file,
     "run_command": run_command,
+    "move_path": move_path,
+    "delete_path": delete_path,
     # Web tools
     "web_search": web_search,
     "fetch_url": fetch_url,
@@ -265,7 +381,12 @@ TOOLS: Dict[str, Callable] = {
     "ls": list_files_in_dir,          # Alias for list_files_in_dir
     "cat": read_file,                 # Alias for read_file
     "search": web_search,             # Alias for web_search
-    "browse": fetch_url               # Alias for fetch_url
+    "browse": fetch_url,              # Alias for fetch_url
+    "mv": move_path,                  # Alias for move_path
+    "rename": move_path,              # Alias for move_path (rename is just move)
+    "rm": delete_path,                # Alias for delete_path
+    "remove": delete_path,            # Alias for delete_path
+    "del": delete_path                # Alias for delete_path (Windows style)
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -358,6 +479,44 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     }
                 },
                 "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_path",
+            "description": "Move or rename a file or folder from source to destination. Works for both files and directories.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "The current path of the file or folder to move"
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "The new path where the file or folder should be moved to"
+                    }
+                },
+                "required": ["source", "destination"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_path",
+            "description": "Delete a file or folder. Requires user confirmation before deletion for safety. Works for both files and directories (recursively deletes folder contents).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path of the file or folder to delete"
+                    }
+                },
+                "required": ["path"]
             }
         }
     }

@@ -384,6 +384,8 @@ When asked to CREATE a file:
 | `read_file` | Read content of a file |
 | `create_folder` | Create a new directory |
 | `create_file` | Create or write a file |
+| `move_path` | Move or rename a file/folder |
+| `delete_path` | Delete a file/folder (asks for confirmation) |
 | `run_command` | Execute a system command |
 | `spawn_agents` | Divide complex tasks into subtasks |
 
