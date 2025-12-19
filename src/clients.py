@@ -316,7 +316,7 @@ class GroqClient(BaseAIClient):
         # GPT-OSS requires tools AND tool_choice to be passed, otherwise it errors
 
         # Import here to avoid circular imports
-        from .tools import TOOL_DEFINITIONS
+        from .tools import get_all_tool_definitions
 
         try:
             kwargs = {
@@ -326,8 +326,8 @@ class GroqClient(BaseAIClient):
             }
 
             # ALWAYS pass tools for GPT-OSS to avoid "tool choice is none" error
-            # If no custom tools provided, use the default TOOL_DEFINITIONS
-            tools_to_use = custom_tools if custom_tools else TOOL_DEFINITIONS
+            # If no custom tools provided, use all available tools (including multi-agent)
+            tools_to_use = custom_tools if custom_tools else get_all_tool_definitions()
             kwargs["tools"] = tools_to_use
             kwargs["tool_choice"] = "auto"  # Let model decide when to use tools
 
@@ -425,7 +425,7 @@ class GroqClient(BaseAIClient):
         tools: Optional[List[Dict[str, Any]]] = None
     ) -> Iterator[StreamChunk]:
         """Retry request with explicit tool configuration"""
-        from .tools import TOOL_DEFINITIONS
+        from .tools import get_all_tool_definitions
 
         try:
             kwargs = {
@@ -434,8 +434,8 @@ class GroqClient(BaseAIClient):
                 "stream": True
             }
 
-            # ALWAYS pass tools for GPT-OSS
-            tools_to_use = tools if tools else TOOL_DEFINITIONS
+            # ALWAYS pass tools for GPT-OSS (including multi-agent tools)
+            tools_to_use = tools if tools else get_all_tool_definitions()
             kwargs["tools"] = tools_to_use
             kwargs["tool_choice"] = "auto"
 
