@@ -534,6 +534,30 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
             name = name[len(prefix):]
             break
 
+    # Normalize argument names per tool (some models use different names)
+    tool_arg_aliases = {
+        "list_files_in_dir": {"path": "directory", "dir": "directory", "folder": "directory"},
+        "read_file": {"path": "file_path", "filepath": "file_path", "filename": "file_path", "file": "file_path"},
+        "create_file": {"path": "file_path", "filepath": "file_path", "filename": "file_path", "file": "file_path"},
+        "create_folder": {"path": "folder_path", "directory": "folder_path", "dir": "folder_path"},
+        "move_path": {"src": "source", "from": "source", "dst": "destination", "to": "destination", "dest": "destination"},
+        "delete_path": {"file": "path", "filepath": "path", "file_path": "path", "target": "path"},
+        "run_command": {"cmd": "command", "shell": "command", "exec": "command"},
+    }
+
+    # Apply argument normalization if tool has aliases defined
+    if name in tool_arg_aliases:
+        aliases = tool_arg_aliases[name]
+        normalized_args = {}
+        for key, value in args.items():
+            new_key = aliases.get(key, key)
+            # Avoid overwriting if the correct key already exists
+            if new_key not in args and new_key not in normalized_args:
+                normalized_args[new_key] = value
+            else:
+                normalized_args[key] = value
+        args = normalized_args
+
     # Check if it's an MCP tool
     if name.startswith("mcp_"):
         try:
