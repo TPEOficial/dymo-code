@@ -525,6 +525,15 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 
 def execute_tool(name: str, args: Dict[str, Any]) -> str:
     """Execute a tool by name with given arguments"""
+    # Strip common prefixes that some models add incorrectly
+    # e.g., "repo_browser.list_files_in_dir" -> "list_files_in_dir"
+    original_name = name
+    prefixes_to_strip = ["repo_browser.", "functions.", "tools.", "file_ops.", "system."]
+    for prefix in prefixes_to_strip:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+
     # Check if it's an MCP tool
     if name.startswith("mcp_"):
         try:
