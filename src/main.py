@@ -680,7 +680,7 @@ def main():
     console.print()
 
     # Check for background initialization results
-    time.sleep(0.3)  # Small delay to allow setup to complete
+    # Note: Removed 0.3s delay - get_setup_result() checks if ready
 
     # Show setup result if it was performed (not for first-run users, they already saw it)
     if not user_config.is_first_run:

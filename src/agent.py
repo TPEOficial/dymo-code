@@ -5,6 +5,8 @@ Main Agent class for Dymo Code
 import json
 import re
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -359,13 +361,18 @@ class Agent:
         return None
 
     def _generate_title_async(self, first_message: str):
-        """Generate title for the conversation"""
-        try:
-            title = self.client_manager.generate_title(first_message)
-            history_manager.set_title(title)
-            log_debug(f"Generated title: {title}")
-        except Exception as e:
-            log_error("Failed to generate title", e)
+        """Generate title for the conversation in a background thread"""
+        def _generate():
+            try:
+                title = self.client_manager.generate_title(first_message)
+                history_manager.set_title(title)
+                log_debug(f"Generated title: {title}")
+            except Exception as e:
+                log_error("Failed to generate title", e)
+
+        # Run in background thread to not block the main flow
+        thread = threading.Thread(target=_generate, daemon=True)
+        thread.start()
 
     def _save_conversation(self):
         """Save the current conversation state"""
@@ -397,20 +404,41 @@ class Agent:
 
         return tool_calls
 
-    def _execute_single_tool(self, tc, tool_call_id: int) -> tuple:
-        """Execute a single tool call and return results"""
-        # Parse arguments - handle both string JSON and dict
+    def _parse_tool_args(self, tc) -> dict:
+        """Parse tool call arguments"""
         try:
             if isinstance(tc.arguments, dict):
-                args = tc.arguments
+                return tc.arguments
             elif isinstance(tc.arguments, str) and tc.arguments.strip():
-                args = json.loads(tc.arguments)
+                return json.loads(tc.arguments)
             else:
-                args = {}
+                return {}
         except json.JSONDecodeError as e:
             log_error("Failed to parse tool arguments", e, {"tool": tc.name, "args": tc.arguments[:200] if tc.arguments else ""})
-            # Try to recover with empty args or continue
-            args = {}
+            return {}
+
+    def _execute_tool_only(self, tc, args: dict) -> tuple:
+        """Execute a tool without UI - for parallel execution"""
+        result = execute_tool(tc.name, args)
+
+        # Check if result indicates an error
+        has_error = (
+            result.startswith("Error") or
+            "[exit code:" in result or
+            "not recognized" in result.lower() or
+            "command not found" in result.lower() or
+            "no se reconoce" in result.lower() or
+            "is not recognized" in result.lower()
+        )
+
+        if has_error:
+            log_tool_error(tc.name, args, result)
+
+        return tc, args, result, has_error
+
+    def _execute_single_tool(self, tc, tool_call_id: int) -> tuple:
+        """Execute a single tool call and return results (with UI)"""
+        args = self._parse_tool_args(tc)
 
         # Get detail for status update
         detail = ""
@@ -430,7 +458,6 @@ class Agent:
         self._update_status(tc.name, detail)
 
         # Determine if we should show verbose tool info
-        # Hide folder creation display as it's usually just a prep step
         verbose = tc.name not in ["create_folder"]
 
         # Display and execute
@@ -453,7 +480,6 @@ class Agent:
             log_tool_error(tc.name, args, result)
 
         # Only show result panel for verbose operations
-        # File operations show their own diff display
         if verbose or has_error:
             display_tool_result(result, tc.name)
 
@@ -470,11 +496,53 @@ class Agent:
         all_results = []
         has_any_error = False
 
-        for i, tc in enumerate(tool_calls):
-            tc_result = self._execute_single_tool(tc, i)
+        # For single tool call, use normal sequential execution with UI
+        if len(tool_calls) == 1:
+            tc_result = self._execute_single_tool(tool_calls[0], 0)
             all_results.append(tc_result)
-            if tc_result[3]:  # has_error flag
+            if tc_result[3]:
                 has_any_error = True
+        else:
+            # For multiple tool calls, execute in parallel for speed
+            self._update_status("executing", f"{len(tool_calls)} tools in parallel")
+
+            # Parse all arguments first
+            parsed_tools = [(tc, self._parse_tool_args(tc)) for tc in tool_calls]
+
+            # Show what we're about to execute
+            for tc, args in parsed_tools:
+                verbose = tc.name not in ["create_folder"]
+                console.print()
+                display_tool_call(tc.name, args, verbose=verbose)
+
+            # Execute all tools in parallel using ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(len(tool_calls), 5)) as executor:
+                futures = {
+                    executor.submit(self._execute_tool_only, tc, args): (tc, args)
+                    for tc, args in parsed_tools
+                }
+
+                # Collect results in order
+                results_map = {}
+                for future in as_completed(futures):
+                    tc, args = futures[future]
+                    try:
+                        result = future.result()
+                        results_map[tc.id] = result
+                    except Exception as e:
+                        results_map[tc.id] = (tc, args, f"Error: {str(e)}", True)
+
+            # Maintain original order and show results
+            for tc, args in parsed_tools:
+                tc_result = results_map.get(tc.id, (tc, args, "Error: Unknown", True))
+                all_results.append(tc_result)
+                if tc_result[3]:
+                    has_any_error = True
+
+                # Show result
+                verbose = tc.name not in ["create_folder"]
+                if verbose or tc_result[3]:
+                    display_tool_result(tc_result[2], tc.name)
 
         # Add tool calls to messages
         tool_calls_data = []
@@ -616,9 +684,10 @@ class Agent:
             return error_msg
 
         # Compress context if needed (prevents token limit errors)
-        if context_manager.should_compress(self.messages, self.model_key):
-            state = context_manager.get_state(self.messages, self.model_key)
-            display_info(f"Compressing conversation context ({state.usage_percent:.0%} used)...")
+        # Get state once and check if compression is needed
+        context_state = context_manager.get_state(self.messages, self.model_key)
+        if context_state.needs_compression:
+            display_info(f"Compressing conversation context ({context_state.usage_percent:.0%} used)...")
             self.messages = context_manager.compress_context(
                 self.messages,
                 self.model_key,
