@@ -29,9 +29,9 @@
 
 2. Go to the folder where you want to initialize the project.
 
-3. Optional: Set the binary you downloaded in the PATH so you can run it as `dymo-code`.
+3. If the binary has been correctly set in the PATH, you can run it as `dymo-code`. Otherwise, you will have to do it manually if you prefer.
 
-4. Enter the empty or existing project you created and run the binary path or command if you defined it in the PATH.
+4. Enter the empty or existing project you created and run `dymo-code` or the binary path or command if you defined it in the PATH.
 
 5A. If this is your first time doing this, most providers will ask you for an API key. In Dymo Code, run the command `/getapikey <provider>`.
 
@@ -62,18 +62,18 @@ $ python run.py
 
 ### Main Features
 
-| Name                               | Status              | Active |
-|------------------------------------|---------------------|--------|
-| AI Chat                            | In development      |   ✅   |
-| Parallel Multi-Agent	             | Active              |   ✅   |
-| Support for multiple AI providers  | In development      |   ⚠️   |
-| Jailbreak Mode                     | In development      |   ⚠️   |
-| MCP Support                        | In BETA Phase       |   ⚠️   |
-| Multi-Key Pool System              | Active              |   ✅   |
-| Theme System                       | Active              |   ✅   |
-| Search engine with bypass          | Active              |   ✅   |
-| Command Permission System          | Active              |   ✅   |
-| Advanced History Management System | Active              |   ✅   |
+| Name                                          | Status              | Active |
+|-----------------------------------------------|---------------------|--------|
+| AI Chat                                       | In development      |   ✅   |
+| Parallel Multi-Agent	                        | Active              |   ✅   |
+| Support for multiple AI providers             | In development      |   ⚠️   |
+| Jailbreak Mode                                | In development      |   ⚠️   |
+| MCP Support                                   | In BETA Phase       |   ⚠️   |
+| Multi-Key Pool System                         | Active              |   ✅   |
+| Theme System                                  | Active              |   ✅   |
+| Search engine with bypass                     | Active              |   ✅   |
+| Command Permission System                     | Active              |   ✅   |
+| Advanced History Management System            | Active              |   ✅   |
 
 <details>
   <summary>Other features</summary>
@@ -83,6 +83,7 @@ $ python run.py
 | Command Correction System                     | Active              |   ✅   |
 | Scanning URLs before opening them             | In development      |   ⚠️   |
 | Automatic API Key change when credits run out | Active              |   ✅   |
+| Task Management System                        | Active              |   ✅   |
 
 </details>
 
