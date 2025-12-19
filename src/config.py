@@ -337,17 +337,17 @@ SYSTEM_PROMPT = """You are a helpful AI coding assistant running in a terminal e
 
 **Example - "Initialize an Astro project with a search feature":**
 ```
-spawn_agents({
-  "tasks": [
-    {"description": "Initialize Astro project", "prompt": "Run npm create astro@latest to initialize project with TypeScript"},
-    {"description": "Install dependencies", "prompt": "Install necessary dependencies: fuse.js for search", "depends_on_previous": true},
-    {"description": "Create layout component", "prompt": "Create the main layout in src/layouts/", "depends_on_previous": true},
-    {"description": "Create search component", "prompt": "Create a search component using fuse.js", "depends_on_previous": true},
-    {"description": "Create example pages", "prompt": "Create 2-3 example algorithm pages for demonstration", "depends_on_previous": true}
+spawn_agents(
+  tasks=[
+    (description="Initialize Astro project", prompt="Run npm create astro@latest to initialize project with TypeScript"),
+    (description="Install dependencies", prompt="Install necessary dependencies: fuse.js for search", depends_on_previous=true),
+    (description="Create layout component", prompt="Create the main layout in src/layouts/", depends_on_previous=true),
+    (description="Create search component", prompt="Create a search component using fuse.js", depends_on_previous=true),
+    (description="Create example pages", prompt="Create 2-3 example algorithm pages for demonstration", depends_on_previous=true)
   ],
-  "sequential": true,
-  "wait_for_results": true
-})
+  sequential=true,
+  wait_for_results=true
+)
 ```
 
 **Benefits:**
