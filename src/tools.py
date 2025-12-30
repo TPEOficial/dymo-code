@@ -970,6 +970,70 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                 "required": ["search_pattern", "replace_with"]
             }
         }
+    },
+    # Aliases for create_file - some models prefer these names
+    {
+        "type": "function",
+        "function": {
+            "name": "update_file",
+            "description": "Update/modify an existing file with new content. Alias for create_file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path of the file to update"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The new content for the file"
+                    }
+                },
+                "required": ["file_path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Edit a file by replacing its content. Alias for create_file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path of the file to edit"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The new content for the file"
+                    }
+                },
+                "required": ["file_path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write content to a file. Alias for create_file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path of the file to write"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write"
+                    }
+                },
+                "required": ["file_path", "content"]
+            }
+        }
     }
 ]
 
