@@ -23,19 +23,44 @@
 
 **Dymo Code** is the main alternative to Claude Code on the open-source side and free for users, maintained by the community.
 
-### Use
+## Quick Install
 
-1. First, download the latest version of Dymo Code from the [releases](https://github.com/TPEOficial/dymo-code/releases).
+### Linux / macOS
 
-2. Go to the folder where you want to initialize the project.
+```bash
+curl -fsSL https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.sh | bash
+```
 
-3. If the binary has been correctly set in the PATH, you can run it as `dymo-code`. Otherwise, you will have to do it manually if you prefer.
+### Windows (PowerShell)
 
-4. Enter the empty or existing project you created and run `dymo-code` or the binary path or command if you defined it in the PATH.
+```powershell
+iwr -useb https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.ps1 | iex
+```
 
-5A. If this is your first time doing this, most providers will ask you for an API key. In Dymo Code, run the command `/getapikey <provider>`.
+### Install specific version
 
-5B. If this is your first time, for most providers you will need an API Key. Once you have it, in Dymo Code, run the command `/setapikey <provider> <apikey>`.
+```bash
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.sh | bash -s -- --version v1.0.0
+
+# Windows
+$env:DYMO_VERSION="v1.0.0"; iwr -useb https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.ps1 | iex
+```
+
+### Manual Download
+
+Download the latest version from [Releases](https://github.com/TPEOficial/dymo-code/releases).
+
+## Getting Started
+
+1. Run `dymo-code` in your terminal
+2. Set your API key: `/setapikey groq YOUR_API_KEY`
+3. Start chatting!
+
+> **Get free API keys:**
+> - [Groq](https://console.groq.com) (Recommended - Fast & Free)
+> - [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
+> - [OpenRouter](https://openrouter.ai/keys) (100+ models)
 
 ### Use (for development)
 
