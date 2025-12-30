@@ -94,12 +94,12 @@ $ python run.py
 | Anthropic (Coming Soon)        | Exec `/models` command                        | API         | None    |
 | Cerebras (Recommended)         | Exec `/models` command                        | API         | None    |
 | TPEOficial (Coming Soon)       | Exec `/models` command                        | API         | None    |
-| Google (Coming Soon)           | Exec `/models` command                        | API         | None    |
+| Google                         | Exec `/models` command                        | API         | None    |
 | Groq (Recommended \| Default)  | Exec `/models` command                        | API         | None    |
 | Meta (Coming Soon)             | Exec `/models` command                        | API         | None    |
 | Ollama (Coming Soon)           | Exec `/models` command                        | Local       | None    |
 | OpenAI (Coming Soon)           | Exec `/models` command                        | API         | None    |
-| OpenRouter (Coming Soon)       | Exec `/models` command                        | API         | None    |
+| OpenRouter (Recommended)       | Exec `/models` command                        | API         | None    |
 | Perplexity (Coming Soon)       | Exec `/models` command                        | API         | None    |
 
 And coming soon...

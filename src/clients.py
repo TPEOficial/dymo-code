@@ -6,6 +6,7 @@ With automatic API key rotation on rate limits or credit exhaustion
 
 import os
 import json
+import time
 import httpx
 from abc import ABC, abstractmethod
 from typing import Iterator, Optional, Dict, Any, List
@@ -110,12 +111,8 @@ class GroqClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        # Check if package is installed
-        try:
-            import groq
-        except ImportError:
-            return False
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("GROQ_API_KEY"))
+        # Check if API key is configured (package check happens at runtime in _get_client)
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def _handle_error_and_retry(self, error: Exception, messages, model, tools, retry_count: int = 0):
         """Handle error with potential key rotation and retry"""
@@ -564,12 +561,8 @@ class OpenRouterClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        # OpenRouter uses the openai package
-        try:
-            import openai
-        except ImportError:
-            return False
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENROUTER_API_KEY"))
+        # Check if API key is configured (package check happens at runtime in _get_client)
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def stream_chat(
         self,
@@ -715,12 +708,8 @@ class AnthropicClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        # Check if package is installed
-        try:
-            import anthropic
-        except ImportError:
-            return False
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("ANTHROPIC_API_KEY"))
+        # Check if API key is configured (package check happens at runtime in _get_client)
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def _convert_tools_to_anthropic_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert OpenAI-style tools to Anthropic format"""
@@ -901,12 +890,8 @@ class OpenAIClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        # Check if package is installed
-        try:
-            import openai
-        except ImportError:
-            return False
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENAI_API_KEY"))
+        # Check if API key is configured (package check happens at runtime in _get_client)
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def stream_chat(
         self,
@@ -1020,11 +1005,12 @@ class OllamaClient(BaseAIClient):
         return self._http_client
 
     def is_available(self) -> bool:
-        """Check if Ollama is running"""
+        """Check if Ollama is running (with short timeout)"""
         try:
-            client = self._get_client()
-            response = client.get(f"{self.base_url}/api/tags")
-            return response.status_code == 200
+            # Use a short timeout for availability check to avoid delays
+            with httpx.Client(timeout=2.0) as quick_client:
+                response = quick_client.get(f"{self.base_url}/api/tags")
+                return response.status_code == 200
         except Exception:
             return False
 
@@ -1190,7 +1176,8 @@ class GeminiClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("GOOGLE_API_KEY"))
+        # api_key_manager already checks env vars and filters placeholders
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def _convert_messages_to_gemini_format(
         self,
@@ -1448,11 +1435,8 @@ class CerebrasClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
-        try:
-            from cerebras.cloud.sdk import Cerebras
-        except ImportError:
-            return False
-        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("CEREBRAS_API_KEY"))
+        # Check if API key is configured (package check happens at runtime in _get_client)
+        return api_key_manager.has_available_key(self.PROVIDER)
 
     def stream_chat(
         self,
@@ -1564,6 +1548,10 @@ class ClientManager:
             ModelProvider.GOOGLE: GeminiClient(),
             ModelProvider.CEREBRAS: CerebrasClient(),
         }
+        # Cache for provider availability (to avoid slow repeated checks)
+        self._availability_cache: Dict[ModelProvider, bool] = {}
+        self._availability_cache_time: float = 0
+        self._availability_cache_ttl: float = 30.0  # Cache for 30 seconds
 
     def get_client(self, model_key: str) -> BaseAIClient:
         """Get the appropriate client for the given model"""
@@ -1635,11 +1623,20 @@ class ClientManager:
             return "Untitled Conversation"
 
     def get_available_providers(self) -> Dict[ModelProvider, bool]:
-        """Get a dict of providers and their availability status"""
-        return {
+        """Get a dict of providers and their availability status (cached)"""
+        current_time = time.time()
+
+        # Return cached result if still valid
+        if self._availability_cache and (current_time - self._availability_cache_time) < self._availability_cache_ttl:
+            return self._availability_cache
+
+        # Refresh cache
+        self._availability_cache = {
             provider: client.is_available()
             for provider, client in self._clients.items()
         }
+        self._availability_cache_time = current_time
+        return self._availability_cache
 
     def get_ollama_models(self) -> List[str]:
         """Get list of locally available Ollama models"""
