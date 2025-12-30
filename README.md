@@ -60,6 +60,7 @@ Download the latest version from [Releases](https://github.com/TPEOficial/dymo-c
 > **Get free API keys:**
 > - [Groq](https://console.groq.com) (Recommended - Fast & Free)
 > - [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
+> - [Cerebras](https://cloud.cerebras.ai) (Recommended - Fast & Free)
 > - [OpenRouter](https://openrouter.ai/keys) (100+ models)
 
 ### Use (for development)
