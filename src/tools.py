@@ -11,6 +11,7 @@ from pathlib import Path
 from .web_tools import (
     web_search,
     fetch_url,
+    search_and_summarize,
     WEB_TOOL_DEFINITIONS,
     execute_web_tool
 )
@@ -695,6 +696,8 @@ TOOLS: Dict[str, Callable] = {
     # Web tools
     "web_search": web_search,
     "fetch_url": fetch_url,
+    "search_and_summarize": search_and_summarize,
+    "research": search_and_summarize,  # Alias for search_and_summarize
     # Aliases - some models use different names for the same tools
     "replace_file": create_file,      # Alias for create_file
     "write_file": create_file,        # Alias for create_file

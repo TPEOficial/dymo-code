@@ -125,7 +125,8 @@ class UserConfig:
             "created_at": None,
             "last_seen": None,
             "theme": "default",
-            "language": "en"
+            "language": "en",
+            "auto_update": True
         }
 
     def _save_config(self):
@@ -188,6 +189,17 @@ class UserConfig:
     def set(self, key: str, value):
         """Set a configuration value"""
         self._config[key] = value
+        self._save_config()
+
+    @property
+    def auto_update(self) -> bool:
+        """Check if auto-update is enabled"""
+        return self._config.get("auto_update", True)
+
+    @auto_update.setter
+    def auto_update(self, enabled: bool):
+        """Enable or disable auto-update"""
+        self._config["auto_update"] = enabled
         self._save_config()
 
     @property

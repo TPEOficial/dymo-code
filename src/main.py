@@ -470,6 +470,187 @@ def show_update_notification():
     )
     console.print()
 
+
+def perform_silent_auto_update() -> bool:
+    """
+    Perform silent automatic update at startup.
+    Downloads and applies update without user interaction.
+    Returns True if app should restart.
+    """
+    global _auto_update_info
+
+    try:
+        # Check if auto-update is enabled in user config
+        if not user_config.auto_update:
+            return False
+
+        # Fetch release info silently
+        release_info = _fetch_latest_release_info()
+        if not release_info:
+            return False
+
+        remote_version = release_info.get("tag_name", "").lstrip("v")
+        local_version = get_version()
+
+        # No update needed
+        if not remote_version or remote_version == local_version:
+            return False
+
+        # Check if remote is actually newer (not older)
+        if not _is_newer_version(remote_version, local_version):
+            return False
+
+        # Get download URL
+        download_url = _get_download_url_for_platform(release_info)
+        if not download_url:
+            return False
+
+        # Show minimal update message
+        print(f"\r⟳ Updating to v{remote_version}...", end="", flush=True)
+
+        # Create temp directory
+        temp_dir = Path(tempfile.mkdtemp(prefix="dymo_autoupdate_"))
+
+        # Determine file extension
+        url_path = download_url.split("?")[0]
+        if ".zip" in url_path:
+            ext = ".zip"
+        elif ".tar.gz" in url_path:
+            ext = ".tar.gz"
+        elif ".exe" in url_path:
+            ext = ".exe"
+        else:
+            ext = ".zip"
+
+        download_path = temp_dir / f"dymo_update{ext}"
+
+        # Download silently (no progress callback)
+        if not _download_file(download_url, download_path):
+            print("\r" + " " * 50 + "\r", end="", flush=True)  # Clear line
+            return False
+
+        # Get current executable path
+        if getattr(sys, 'frozen', False):
+            current_exe = Path(sys.executable)
+        else:
+            current_exe = Path(__file__).parent.parent
+
+        # Extract and prepare update
+        if ext == ".zip":
+            extract_dir = temp_dir / "extracted"
+            with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+            if getattr(sys, 'frozen', False):
+                # For compiled exe: find new exe
+                new_exe = None
+                for item in extract_dir.rglob("*"):
+                    if item.is_file() and item.suffix == ".exe":
+                        new_exe = item
+                        break
+
+                if new_exe:
+                    # Create update script that replaces and restarts
+                    update_script = temp_dir / ("update.bat" if sys.platform == "win32" else "update.sh")
+
+                    if sys.platform == "win32":
+                        script_content = f'''@echo off
+timeout /t 1 /nobreak >nul
+copy /Y "{new_exe}" "{current_exe}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+                    else:
+                        script_content = f'''#!/bin/bash
+sleep 1
+cp -f "{new_exe}" "{current_exe}"
+chmod +x "{current_exe}"
+"{current_exe}" &
+rm "$0"
+'''
+
+                    with open(update_script, "w") as f:
+                        f.write(script_content)
+
+                    if sys.platform != "win32":
+                        os.chmod(update_script, 0o755)
+
+                    _auto_update_info = {"script": str(update_script), "version": remote_version}
+                    print(f"\r✓ Updated to v{remote_version}! Restarting...   ")
+                    return True
+            else:
+                # For source: update version.json and src files
+                for item in extract_dir.rglob("version.json"):
+                    static_api_dir = current_exe / "static-api"
+                    if static_api_dir.exists():
+                        shutil.copy(item, static_api_dir / "version.json")
+
+                # Update source files
+                for item in extract_dir.rglob("src"):
+                    if item.is_dir():
+                        src_dir = current_exe / "src"
+                        if src_dir.exists():
+                            # Backup and update
+                            for src_file in item.rglob("*.py"):
+                                rel_path = src_file.relative_to(item)
+                                dest_file = src_dir / rel_path
+                                if dest_file.exists():
+                                    shutil.copy(src_file, dest_file)
+                        break
+
+                print(f"\r✓ Updated to v{remote_version}! Restarting...   ")
+                # Restart the Python script
+                _auto_update_info = {"restart_python": True, "version": remote_version}
+                return True
+
+        elif ext == ".exe":
+            if getattr(sys, 'frozen', False):
+                update_script = temp_dir / "update.bat"
+                script_content = f'''@echo off
+timeout /t 1 /nobreak >nul
+copy /Y "{download_path}" "{current_exe}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+                with open(update_script, "w") as f:
+                    f.write(script_content)
+
+                _auto_update_info = {"script": str(update_script), "version": remote_version}
+                print(f"\r✓ Updated to v{remote_version}! Restarting...   ")
+                return True
+
+        return False
+
+    except Exception:
+        # Silent fail - don't interrupt user
+        print("\r" + " " * 50 + "\r", end="", flush=True)  # Clear line
+        return False
+
+
+def auto_restart():
+    """Restart the application after auto-update"""
+    global _auto_update_info
+
+    if not _auto_update_info:
+        return
+
+    if "script" in _auto_update_info:
+        # Use update script (for exe)
+        script = _auto_update_info["script"]
+        if os.path.exists(script):
+            if sys.platform == "win32":
+                subprocess.Popen(["cmd", "/c", script], creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                subprocess.Popen(["bash", script])
+            sys.exit(0)
+
+    elif _auto_update_info.get("restart_python"):
+        # Restart Python script
+        python = sys.executable
+        script = sys.argv[0]
+        os.execv(python, [python, script] + sys.argv[1:])
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Input Handler with Queue Support
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -622,6 +803,12 @@ def run_first_time_setup() -> str:
 
 def main():
     """Main entry point"""
+    # Check for automatic updates before anything else
+    # This runs silently and restarts if an update is available
+    if perform_silent_auto_update():
+        auto_restart()
+        return  # Should not reach here, but just in case
+
     console.clear()
     print_banner()
 

@@ -528,6 +528,23 @@ WEB_TOOL_DEFINITIONS = [
                 "required": ["url"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_and_summarize",
+            "description": "Search the web and fetch content from top results. Use this for research tasks when you need comprehensive information on a topic. This searches, fetches top 3 results, and combines their content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The research query - be specific about what you want to learn"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -551,6 +568,10 @@ def execute_web_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
     elif tool_name == "fetch_url":
         url = arguments.get("url", "")
         return fetch_url(url)
+
+    elif tool_name in ("search_and_summarize", "research"):
+        query = arguments.get("query", "")
+        return search_and_summarize(query)
 
     else: return f"Unknown web tool: {tool_name}"
 

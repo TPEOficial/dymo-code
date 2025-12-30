@@ -610,6 +610,9 @@ class Agent:
         allow_more_tools = round_num < MAX_TOOL_ROUNDS
         tools_for_followup = get_all_tool_definitions() if allow_more_tools else None
 
+        # Reset status after tool execution to avoid spinner staying on "Writing file"
+        self._update_status("thinking", "")
+
         console.print()
         follow_up_response = ""
         pending_tool_calls = []
