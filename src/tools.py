@@ -234,6 +234,8 @@ def run_command(command: str = "", timeout: int = 300) -> str:
 
     output_lines = []
     exit_code = 0
+    process = None
+    interrupted = False
 
     try:
         # Use Popen for streaming output
@@ -257,10 +259,30 @@ def run_command(command: str = "", timeout: int = 300) -> str:
         process.wait(timeout=timeout)
         exit_code = process.returncode
 
+    except KeyboardInterrupt:
+        # User pressed Ctrl+C - terminate the process
+        interrupted = True
+        if process:
+            try:
+                # Try graceful termination first
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't respond
+                    process.kill()
+                    process.wait()
+            except Exception:
+                pass
+        console_display.mark_interrupted()
+        exit_code = -2  # Special code for interrupted
+
     except subprocess.TimeoutExpired:
-        process.kill()
+        if process:
+            process.kill()
         console_display.append("[Command timed out!]")
         exit_code = -1
+
     except Exception as e:
         console_display.append(f"[Error: {str(e)}]")
         exit_code = -1
@@ -269,7 +291,9 @@ def run_command(command: str = "", timeout: int = 300) -> str:
 
     # Return complete output for tool result
     result = ''.join(output_lines)
-    if exit_code != 0:
+    if interrupted:
+        result += "\n[Process interrupted by user]"
+    elif exit_code != 0:
         result += f"\n[exit code: {exit_code}]"
 
     return result.strip() if result.strip() else "(No output)"

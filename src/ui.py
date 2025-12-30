@@ -1064,6 +1064,8 @@ class StreamingConsole:
         self.live = None
         self.max_lines = max_lines
         self.exit_code = None
+        self.interrupted = False
+        self.is_running = True
 
     def start(self):
         """Start the live display"""
@@ -1109,21 +1111,38 @@ class StreamingConsole:
         # Title with exit code if finished
         title = f"[bold cyan]$ {self.title}[/bold cyan]"
         if self.exit_code is not None:
-            code_style = COLORS['success'] if self.exit_code == 0 else COLORS['error']
-            title += f" [{code_style}](exit: {self.exit_code})[/{code_style}]"
+            if self.interrupted:
+                title += f" [{COLORS['warning']}](interrupted)[/{COLORS['warning']}]"
+            else:
+                code_style = COLORS['success'] if self.exit_code == 0 else COLORS['error']
+                title += f" [{code_style}](exit: {self.exit_code})[/{code_style}]"
+
+        # Show hint to stop while running
+        subtitle = None
+        if self.is_running and self.exit_code is None:
+            subtitle = f"[dim {COLORS['muted']}]Press Ctrl+C to stop[/]"
 
         return Panel(
             text,
             title=title,
             title_align="left",
+            subtitle=subtitle,
+            subtitle_align="right",
             border_style=COLORS['muted'],
             box=ROUNDED,
             padding=(0, 1)
         )
 
+    def mark_interrupted(self):
+        """Mark the execution as interrupted by user"""
+        self.interrupted = True
+        self.is_running = False
+        self.append("[yellow]⚠ Process interrupted by user (Ctrl+C)[/yellow]")
+
     def finish(self, exit_code: int):
         """Finish streaming and show final static panel"""
         self.exit_code = exit_code
+        self.is_running = False
         if self.live:
             self.live.stop()
         # Print final static panel that persists
