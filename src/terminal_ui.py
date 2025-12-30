@@ -123,7 +123,7 @@ class StatusSpinner:
             try:
                 # Skip output when paused (e.g., during StreamingConsole)
                 if _spinner_paused:
-                    time.sleep(0.08)
+                    time.sleep(0.15)
                     continue
 
                 frame = self.SPINNER_FRAMES[self._frame_idx % len(self.SPINNER_FRAMES)]
@@ -139,7 +139,7 @@ class StatusSpinner:
 
                 self._last_line_len = len(line)
                 self._frame_idx += 1
-                time.sleep(0.08)
+                time.sleep(0.15)
             except Exception:
                 break
 

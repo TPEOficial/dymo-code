@@ -75,7 +75,7 @@ def get_friendly_quota_message(provider: str) -> str:
 StatusCallback = Optional[Callable[[str, str], None]]
 
 # Maximum number of tool call rounds to prevent infinite loops
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = 3
 
 # Pattern to detect file references with @ symbol
 # Matches @path/to/file or @./relative/path or @C:\windows\path
@@ -618,6 +618,7 @@ class Agent:
         pending_tool_calls = []
         has_content = False
         live_display = None
+        chunk_count = 0  # Buffer: only update display every N chunks
 
         # Stream with Live panel for smooth updates
         for chunk in client.stream_chat(
@@ -633,14 +634,15 @@ class Agent:
                     live_display = Live(
                         Panel(Markdown(follow_up_response or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
                         console=console,
-                        refresh_per_second=10,
+                        refresh_per_second=4,
                         transient=True
                     )
                     live_display.start()
 
                 follow_up_response += chunk.content
-                # Update the live panel
-                if live_display:
+                chunk_count += 1
+                # Update the live panel only every 5 chunks to reduce re-renders
+                if live_display and chunk_count % 5 == 0:
                     live_display.update(
                         Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
                     )
@@ -739,6 +741,7 @@ class Agent:
             all_tools = get_all_tool_definitions()
             has_started_streaming = False
             live_display = None
+            chunk_count = 0  # Buffer: only update display every N chunks
 
             # Update status to generating
             self._update_status("generating", "")
@@ -758,14 +761,15 @@ class Agent:
                         live_display = Live(
                             Panel(Markdown(response_text or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
                             console=console,
-                            refresh_per_second=10,
+                            refresh_per_second=4,
                             transient=True
                         )
                         live_display.start()
 
                     response_text += chunk.content
-                    # Update the live panel with new content
-                    if live_display:
+                    chunk_count += 1
+                    # Update the live panel only every 5 chunks to reduce re-renders
+                    if live_display and chunk_count % 5 == 0:
                         live_display.update(
                             Panel(Markdown(response_text), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
                         )
