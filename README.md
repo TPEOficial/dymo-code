@@ -92,6 +92,7 @@ $ python run.py
 | Provider                       | Models (Assorted)                             | Execution   | Rating  |
 |--------------------------------|-----------------------------------------------|-------------|---------|
 | Anthropic (Coming Soon)        | To be specified shortly                       | API         | None    |
+| Cerebras (Recommended)         | To be specified shortly                       | API         | None    |
 | TPEOficial (Coming Soon)       | To be specified shortly                       | API         | None    |
 | Google (Coming Soon)           | To be specified shortly                       | API         | None    |
 | Groq (Recommended \| Default)  | To be specified shortly                       | API         | None    |
