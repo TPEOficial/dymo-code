@@ -56,6 +56,24 @@ STATUS_MESSAGES = {
 # Animated Status Spinner
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Global spinner pause flag - used by StreamingConsole to pause spinner output
+_spinner_paused = False
+
+def pause_spinner():
+    """Pause the global spinner (called by StreamingConsole)"""
+    global _spinner_paused
+    _spinner_paused = True
+
+def resume_spinner():
+    """Resume the global spinner"""
+    global _spinner_paused
+    _spinner_paused = False
+
+def is_spinner_paused() -> bool:
+    """Check if spinner is paused"""
+    return _spinner_paused
+
+
 class StatusSpinner:
     """
     Animated spinner with contextual status messages.
@@ -103,6 +121,11 @@ class StatusSpinner:
         """Animation loop that updates spinner in place"""
         while self._running:
             try:
+                # Skip output when paused (e.g., during StreamingConsole)
+                if _spinner_paused:
+                    time.sleep(0.08)
+                    continue
+
                 frame = self.SPINNER_FRAMES[self._frame_idx % len(self.SPINNER_FRAMES)]
                 message = self._get_message()
                 line = f"\r{frame} {message}"

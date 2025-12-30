@@ -1068,6 +1068,18 @@ class StreamingConsole:
     def start(self):
         """Start the live display"""
         from rich.live import Live
+
+        # Pause the status spinner to avoid conflicts
+        try:
+            from .terminal_ui import pause_spinner
+            pause_spinner()
+            # Clear any spinner output
+            import sys
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+        except ImportError:
+            pass
+
         self.live = Live(
             self._render(),
             console=console,
@@ -1116,3 +1128,10 @@ class StreamingConsole:
             self.live.stop()
         # Print final static panel that persists
         console.print(self._render())
+
+        # Resume the status spinner
+        try:
+            from .terminal_ui import resume_spinner
+            resume_spinner()
+        except ImportError:
+            pass
