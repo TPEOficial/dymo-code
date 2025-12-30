@@ -124,8 +124,7 @@ class AgentWorker:
                     break
 
                 choice = chunk.choices[0]
-                if choice.delta.content:
-                    result_text += choice.delta.content
+                if choice.delta.content: result_text += choice.delta.content
 
                 # Update progress based on content length (rough estimate)
                 if on_progress:
@@ -152,32 +151,32 @@ class AgentWorker:
     def _get_system_prompt(self) -> str:
         """Get the appropriate system prompt based on agent type"""
         prompts = {
-            AgentType.GENERAL: """Eres un asistente de IA general. Ayuda al usuario con cualquier tarea.
-Sé conciso y directo en tus respuestas.""",
+            AgentType.GENERAL: """You are a general AI assistant. Help the user with any task.
+Be concise and direct in your responses.""",
 
-            AgentType.CODER: """Eres un experto en programación. Tu trabajo es escribir código limpio,
-eficiente y bien documentado. Siempre explica brevemente tu código.
-Usa las herramientas disponibles para crear archivos cuando sea necesario.""",
+            AgentType.CODER: """You are a programming expert. Your job is to write clean,
+efficient, and well-documented code. Always briefly explain your code.
+Use the available tools to create files when necessary.""",
 
-            AgentType.REVIEWER: """Eres un revisor de código experto. Analiza el código en busca de:
-- Bugs y errores potenciales
-- Problemas de seguridad
-- Mejoras de rendimiento
-- Mejores prácticas
-Proporciona feedback constructivo y específico.""",
+            AgentType.REVIEWER: """You are an expert code reviewer. Analyze code looking for:
+- Bugs and potential errors
+- Security issues
+- Performance improvements
+- Best practices
+Provide constructive and specific feedback.""",
 
-            AgentType.RESEARCHER: """Eres un investigador. Tu trabajo es buscar información,
-analizar datos y proporcionar resúmenes claros y concisos.
-Cita fuentes cuando sea posible.""",
+            AgentType.RESEARCHER: """You are a researcher. Your job is to search for information,
+analyze data, and provide clear and concise summaries.
+Cite sources when possible.""",
 
-            AgentType.FILE_OP: """Eres un especialista en operaciones de archivos.
-Tu trabajo es crear, modificar, mover y organizar archivos y carpetas.
-Siempre confirma las operaciones realizadas.""",
+            AgentType.FILE_OP: """You are a file operations specialist.
+Your job is to create, modify, move, and organize files and folders.
+Always confirm the operations performed.""",
 
-            AgentType.SHELL: """Eres un experto en línea de comandos.
-Tu trabajo es ejecutar comandos de shell de forma segura.
-Siempre explica qué hace cada comando antes de ejecutarlo.
-NUNCA ejecutes comandos destructivos sin confirmación."""
+            AgentType.SHELL: """You are a command line expert.
+Your job is to execute shell commands safely.
+Always explain what each command does before executing it.
+NEVER execute destructive commands without confirmation."""
         }
         return prompts.get(self.agent_type, prompts[AgentType.GENERAL])
 
@@ -258,22 +257,19 @@ class AgentManager:
             try:
                 result = worker.execute_task(task, on_progress=self._handle_progress)
 
-                if self.on_task_complete:
-                    self.on_task_complete(result)
+                if self.on_task_complete: self.on_task_complete(result)
 
                 return result
             finally:
                 with self.lock:
-                    if worker_id in self.workers:
-                        del self.workers[worker_id]
+                    if worker_id in self.workers: del self.workers[worker_id]
 
         if run_async:
             future = self.executor.submit(execute_and_cleanup)
             with self.lock:
                 self.task_futures[task.id] = future
             return task.id
-        else:
-            return execute_and_cleanup()
+        else: return execute_and_cleanup()
 
     def _handle_progress(self, task: AgentTask):
         """Handle task progress updates"""

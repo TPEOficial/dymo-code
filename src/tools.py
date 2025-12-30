@@ -2,9 +2,10 @@
 Tool definitions and implementations for Dymo Code
 """
 
-import os, subprocess, shutil
+import os, subprocess, shutil, glob, re, fnmatch
 from typing import Dict, Any, Callable, List, Optional
 from dataclasses import dataclass
+from pathlib import Path
 
 # Import web tools
 from .web_tools import (
@@ -355,6 +356,269 @@ def _format_delete_size(size: int) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Search Tools (Glob & Grep)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def glob_search(pattern: str = "", path: str = ".", recursive: bool = True, max_results: int = 100) -> str:
+    """
+    Search for files matching a glob pattern.
+    Supports patterns like: **/*.py, src/**/*.ts, *.json, etc.
+    """
+    if not pattern:
+        return "Error: pattern is required"
+
+    try:
+        base_path = Path(path).resolve()
+        if not base_path.exists():
+            return f"Error: Path '{path}' does not exist"
+
+        # Build full pattern
+        if recursive and "**" not in pattern:
+            # Auto-add recursive search if not specified
+            full_pattern = str(base_path / "**" / pattern)
+        else:
+            full_pattern = str(base_path / pattern)
+
+        # Find matching files
+        matches = []
+        for match in glob.iglob(full_pattern, recursive=recursive):
+            match_path = Path(match)
+            # Skip hidden files/dirs unless pattern explicitly includes them
+            if not pattern.startswith(".") and any(p.startswith(".") for p in match_path.parts):
+                continue
+
+            try:
+                rel_path = match_path.relative_to(base_path)
+                is_dir = match_path.is_dir()
+                size = match_path.stat().st_size if not is_dir else 0
+
+                matches.append({
+                    "path": str(rel_path),
+                    "type": "directory" if is_dir else "file",
+                    "size": format_size(size) if not is_dir else "-"
+                })
+
+                if len(matches) >= max_results:
+                    break
+            except (OSError, ValueError):
+                continue
+
+        if not matches:
+            return f"No files found matching pattern: {pattern}"
+
+        # Sort by path
+        matches.sort(key=lambda x: x["path"])
+
+        # Format output
+        result = f"Found {len(matches)} matches for '{pattern}':\n\n"
+        for m in matches:
+            icon = "📁" if m["type"] == "directory" else "📄"
+            result += f"  {icon} {m['path']}"
+            if m["size"] != "-":
+                result += f" ({m['size']})"
+            result += "\n"
+
+        if len(matches) >= max_results:
+            result += f"\n(Results limited to {max_results}. Use more specific pattern.)"
+
+        return result.strip()
+
+    except Exception as e:
+        return f"Error searching: {str(e)}"
+
+
+def grep_search(
+    pattern: str = "",
+    path: str = ".",
+    file_pattern: str = "*",
+    ignore_case: bool = False,
+    max_results: int = 50,
+    context_lines: int = 0
+) -> str:
+    """
+    Search for content in files using regex pattern.
+    Similar to grep command but returns structured results.
+    """
+    if not pattern:
+        return "Error: pattern is required"
+
+    try:
+        base_path = Path(path).resolve()
+        if not base_path.exists():
+            return f"Error: Path '{path}' does not exist"
+
+        # Compile regex
+        flags = re.IGNORECASE if ignore_case else 0
+        try:
+            regex = re.compile(pattern, flags)
+        except re.error as e:
+            return f"Error: Invalid regex pattern - {e}"
+
+        results = []
+        files_searched = 0
+        files_with_matches = 0
+
+        # Build glob pattern for files
+        if "**" not in file_pattern:
+            glob_pattern = str(base_path / "**" / file_pattern)
+        else:
+            glob_pattern = str(base_path / file_pattern)
+
+        for file_path in glob.iglob(glob_pattern, recursive=True):
+            fp = Path(file_path)
+
+            # Skip directories and hidden files
+            if fp.is_dir():
+                continue
+            if any(p.startswith(".") for p in fp.parts):
+                continue
+
+            # Skip binary files
+            try:
+                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+            except (OSError, PermissionError):
+                continue
+
+            files_searched += 1
+            lines = content.split("\n")
+            file_matches = []
+
+            for i, line in enumerate(lines, 1):
+                if regex.search(line):
+                    match_info = {
+                        "line_num": i,
+                        "content": line.strip()[:200]  # Limit line length
+                    }
+
+                    # Add context if requested
+                    if context_lines > 0:
+                        start = max(0, i - 1 - context_lines)
+                        end = min(len(lines), i + context_lines)
+                        match_info["context_before"] = [l.strip()[:200] for l in lines[start:i-1]]
+                        match_info["context_after"] = [l.strip()[:200] for l in lines[i:end]]
+
+                    file_matches.append(match_info)
+
+                    if len(results) + len(file_matches) >= max_results:
+                        break
+
+            if file_matches:
+                files_with_matches += 1
+                try:
+                    rel_path = fp.relative_to(base_path)
+                except ValueError:
+                    rel_path = fp
+
+                results.append({
+                    "file": str(rel_path),
+                    "matches": file_matches
+                })
+
+            if len(results) >= max_results:
+                break
+
+        if not results:
+            return f"No matches found for pattern: {pattern}\n(Searched {files_searched} files)"
+
+        # Format output
+        total_matches = sum(len(r["matches"]) for r in results)
+        output = f"Found {total_matches} matches in {files_with_matches} files:\n\n"
+
+        for r in results:
+            output += f"📄 {r['file']}:\n"
+            for m in r["matches"][:10]:  # Limit matches per file
+                output += f"   L{m['line_num']}: {m['content']}\n"
+            if len(r["matches"]) > 10:
+                output += f"   ... and {len(r['matches']) - 10} more matches\n"
+            output += "\n"
+
+        if total_matches >= max_results:
+            output += f"(Results limited to {max_results}. Use more specific pattern.)"
+
+        return output.strip()
+
+    except Exception as e:
+        return f"Error searching: {str(e)}"
+
+
+def find_and_replace(
+    search_pattern: str = "",
+    replace_with: str = "",
+    file_pattern: str = "*",
+    path: str = ".",
+    dry_run: bool = True,
+    ignore_case: bool = False
+) -> str:
+    """
+    Find and replace text in files. Use dry_run=True to preview changes.
+    """
+    if not search_pattern:
+        return "Error: search_pattern is required"
+
+    try:
+        base_path = Path(path).resolve()
+        if not base_path.exists():
+            return f"Error: Path '{path}' does not exist"
+
+        flags = re.IGNORECASE if ignore_case else 0
+        try:
+            regex = re.compile(search_pattern, flags)
+        except re.error as e:
+            return f"Error: Invalid regex pattern - {e}"
+
+        changes = []
+        glob_pattern = str(base_path / "**" / file_pattern)
+
+        for file_path in glob.iglob(glob_pattern, recursive=True):
+            fp = Path(file_path)
+            if fp.is_dir() or any(p.startswith(".") for p in fp.parts):
+                continue
+
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                matches = list(regex.finditer(content))
+                if not matches:
+                    continue
+
+                new_content = regex.sub(replace_with, content)
+                rel_path = str(fp.relative_to(base_path))
+
+                changes.append({
+                    "file": rel_path,
+                    "count": len(matches),
+                    "preview": matches[0].group()[:50] if matches else ""
+                })
+
+                if not dry_run:
+                    with open(fp, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+
+            except (OSError, PermissionError, UnicodeDecodeError):
+                continue
+
+        if not changes:
+            return f"No matches found for pattern: {search_pattern}"
+
+        total = sum(c["count"] for c in changes)
+        action = "Would replace" if dry_run else "Replaced"
+
+        output = f"{action} {total} occurrences in {len(changes)} files:\n\n"
+        for c in changes:
+            output += f"  📄 {c['file']}: {c['count']} matches\n"
+
+        if dry_run:
+            output += f"\n⚠️  This is a dry run. Set dry_run=False to apply changes."
+
+        return output.strip()
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Tool Registry
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -366,6 +630,10 @@ TOOLS: Dict[str, Callable] = {
     "run_command": run_command,
     "move_path": move_path,
     "delete_path": delete_path,
+    # Search tools
+    "glob_search": glob_search,
+    "grep_search": grep_search,
+    "find_and_replace": find_and_replace,
     # Web tools
     "web_search": web_search,
     "fetch_url": fetch_url,
@@ -386,7 +654,13 @@ TOOLS: Dict[str, Callable] = {
     "rename": move_path,              # Alias for move_path (rename is just move)
     "rm": delete_path,                # Alias for delete_path
     "remove": delete_path,            # Alias for delete_path
-    "del": delete_path                # Alias for delete_path (Windows style)
+    "del": delete_path,               # Alias for delete_path (Windows style)
+    # Search aliases
+    "glob": glob_search,              # Alias for glob_search
+    "grep": grep_search,              # Alias for grep_search
+    "find": glob_search,              # Alias for glob_search
+    "rg": grep_search,                # Alias for grep_search (ripgrep style)
+    "sed": find_and_replace           # Alias for find_and_replace
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -517,6 +791,122 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     }
                 },
                 "required": ["path"]
+            }
+        }
+    },
+    # Search Tools
+    {
+        "type": "function",
+        "function": {
+            "name": "glob_search",
+            "description": "Search for files matching a glob pattern. Supports patterns like **/*.py, src/**/*.ts, *.json. Returns list of matching files with sizes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match files (e.g., '**/*.py', 'src/*.ts', '*.json')"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search in (default: current directory)",
+                        "default": "."
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Search recursively in subdirectories (default: true)",
+                        "default": True
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default: 100)",
+                        "default": 100
+                    }
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep_search",
+            "description": "Search for content in files using regex pattern. Similar to grep/ripgrep. Returns matching lines with file paths and line numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for in file contents"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search in (default: current directory)",
+                        "default": "."
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to filter which files to search (e.g., '*.py', '*.ts')",
+                        "default": "*"
+                    },
+                    "ignore_case": {
+                        "type": "boolean",
+                        "description": "Case-insensitive search (default: false)",
+                        "default": False
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of matches to return (default: 50)",
+                        "default": 50
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "description": "Number of context lines before/after each match (default: 0)",
+                        "default": 0
+                    }
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_and_replace",
+            "description": "Find and replace text in files using regex. Use dry_run=true to preview changes before applying.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for"
+                    },
+                    "replace_with": {
+                        "type": "string",
+                        "description": "Text to replace matches with"
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to filter which files to modify (e.g., '*.py')",
+                        "default": "*"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search in (default: current directory)",
+                        "default": "."
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Preview changes without applying (default: true for safety)",
+                        "default": True
+                    },
+                    "ignore_case": {
+                        "type": "boolean",
+                        "description": "Case-insensitive search (default: false)",
+                        "default": False
+                    }
+                },
+                "required": ["search_pattern", "replace_with"]
             }
         }
     }
