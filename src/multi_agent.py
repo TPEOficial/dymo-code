@@ -7,6 +7,8 @@ import threading
 import time
 import uuid
 import queue
+import re
+import json
 from enum import Enum
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
@@ -22,6 +24,47 @@ from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
 
 from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JSON Repair Helper
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _repair_json(json_str: str) -> str:
+    """Attempt to repair malformed JSON from LLM responses"""
+    if not json_str or not json_str.strip():
+        return "{}"
+
+    s = json_str.strip()
+
+    # Extract JSON if wrapped in markdown code blocks
+    if "```json" in s:
+        start = s.find("```json") + 7
+        end = s.find("```", start)
+        if end > start:
+            s = s[start:end].strip()
+    elif "```" in s:
+        start = s.find("```") + 3
+        end = s.find("```", start)
+        if end > start:
+            s = s[start:end].strip()
+
+    # Find the actual JSON object
+    first_brace = s.find('{')
+    if first_brace == -1:
+        return "{}"
+
+    s = s[first_brace:]
+
+    # Remove trailing commas before } or ]
+    s = re.sub(r',\s*([}\]])', r'\1', s)
+
+    # Balance braces if needed
+    open_braces = s.count('{') - s.count('}')
+    open_brackets = s.count('[') - s.count(']')
+    s = s + '}' * max(0, open_braces) + ']' * max(0, open_brackets)
+
+    return s
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -184,11 +227,15 @@ class AgentWorker:
                             if isinstance(tc.arguments, dict):
                                 args = tc.arguments
                             elif isinstance(tc.arguments, str):
-                                import json
                                 try:
                                     args = json.loads(tc.arguments) if tc.arguments.strip() else {}
                                 except json.JSONDecodeError:
-                                    args = {}
+                                    # Try to repair malformed JSON
+                                    try:
+                                        repaired = _repair_json(tc.arguments)
+                                        args = json.loads(repaired)
+                                    except json.JSONDecodeError:
+                                        args = {}
                             else:
                                 args = {}
 

@@ -307,6 +307,53 @@ class GroqClient(BaseAIClient):
             )
             raise
 
+    def _estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:
+        """Rough estimate of token count (approx 4 chars per token)"""
+        total_chars = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total_chars += len(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        total_chars += len(item["text"])
+            # Count tool calls too
+            if "tool_calls" in msg:
+                for tc in msg.get("tool_calls", []):
+                    if isinstance(tc, dict) and "function" in tc:
+                        total_chars += len(str(tc["function"]))
+        return total_chars // 4
+
+    def _truncate_messages_for_limit(self, messages: List[Dict[str, Any]], max_tokens: int = 5000) -> List[Dict[str, Any]]:
+        """Truncate older messages to stay within token limit for GPT-OSS models"""
+        if not messages:
+            return messages
+
+        # Always keep system message and last few messages
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        non_system = [m for m in messages if m.get("role") != "system"]
+
+        if self._estimate_tokens(messages) <= max_tokens:
+            return messages
+
+        # Keep system + last N messages, progressively reducing
+        result = system_msgs.copy()
+        for i in range(len(non_system) - 1, -1, -1):
+            candidate = result + non_system[i:]
+            if self._estimate_tokens(candidate) <= max_tokens:
+                return candidate
+
+        # If still too large, just keep system + last message with truncated content
+        if non_system:
+            last_msg = non_system[-1].copy()
+            content = last_msg.get("content", "")
+            if isinstance(content, str) and len(content) > 2000:
+                last_msg["content"] = content[:2000] + "... (truncated)"
+            result.append(last_msg)
+
+        return result
+
     def _stream_gpt_oss_chat(
         self,
         client,
@@ -320,9 +367,12 @@ class GroqClient(BaseAIClient):
         # Import here to avoid circular imports
         from .tools import get_all_tool_definitions
 
+        # Truncate messages to avoid rate limit (GPT-OSS has 8000 TPM limit)
+        truncated_messages = self._truncate_messages_for_limit(messages, max_tokens=5000)
+
         try:
             kwargs = {
-                "messages": messages,
+                "messages": truncated_messages,
                 "model": model,
                 "stream": True
             }

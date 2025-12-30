@@ -25,6 +25,7 @@ from .api_key_manager import (
     set_rotation_callbacks, model_fallback_manager
 )
 from .tools import TOOL_DEFINITIONS, execute_tool, TOOLS, get_all_tool_definitions
+from .terminal import terminal_title
 from .ui import (
     console, display_tool_call, display_tool_result, display_executed_tool,
     display_code_execution_result, display_info, display_warning,
@@ -397,6 +398,7 @@ class Agent:
             try:
                 title = self.client_manager.generate_title(first_message)
                 history_manager.set_title(title)
+                terminal_title.set_session(title)
                 log_debug(f"Generated title: {title}")
             except Exception as e:
                 log_error("Failed to generate title", e)
@@ -435,8 +437,74 @@ class Agent:
 
         return tool_calls
 
+    def _repair_json(self, json_str: str) -> str:
+        """Attempt to repair malformed JSON from LLM responses"""
+        if not json_str or not json_str.strip():
+            return "{}"
+
+        s = json_str.strip()
+
+        # Extract JSON if wrapped in markdown code blocks
+        if "```json" in s:
+            start = s.find("```json") + 7
+            end = s.find("```", start)
+            if end > start:
+                s = s[start:end].strip()
+        elif "```" in s:
+            start = s.find("```") + 3
+            end = s.find("```", start)
+            if end > start:
+                s = s[start:end].strip()
+
+        # Find the actual JSON object/array
+        first_brace = s.find('{')
+        first_bracket = s.find('[')
+        if first_brace == -1 and first_bracket == -1:
+            return "{}"
+
+        if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
+            s = s[first_brace:]
+            # Find matching closing brace
+            depth = 0
+            in_string = False
+            escape = False
+            end_idx = len(s)
+            for i, c in enumerate(s):
+                if escape:
+                    escape = False
+                    continue
+                if c == '\\':
+                    escape = True
+                    continue
+                if c == '"' and not escape:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = i + 1
+                        break
+            s = s[:end_idx]
+        elif first_bracket != -1:
+            s = s[first_bracket:]
+
+        # Fix common JSON issues
+        # Remove trailing commas before } or ]
+        s = re.sub(r',\s*([}\]])', r'\1', s)
+
+        # Balance braces if needed
+        open_braces = s.count('{') - s.count('}')
+        open_brackets = s.count('[') - s.count(']')
+        s = s + '}' * max(0, open_braces) + ']' * max(0, open_brackets)
+
+        return s
+
     def _parse_tool_args(self, tc) -> dict:
-        """Parse tool call arguments"""
+        """Parse tool call arguments with JSON repair for malformed responses"""
         try:
             if isinstance(tc.arguments, dict):
                 return tc.arguments
@@ -444,9 +512,16 @@ class Agent:
                 return json.loads(tc.arguments)
             else:
                 return {}
-        except json.JSONDecodeError as e:
-            log_error("Failed to parse tool arguments", e, {"tool": tc.name, "args": tc.arguments[:200] if tc.arguments else ""})
-            return {}
+        except json.JSONDecodeError:
+            # Try to repair the JSON
+            try:
+                repaired = self._repair_json(tc.arguments)
+                result = json.loads(repaired)
+                log_debug(f"Repaired malformed JSON for tool {tc.name}")
+                return result
+            except json.JSONDecodeError as e:
+                log_error("Failed to parse tool arguments", e, {"tool": tc.name, "args": tc.arguments[:200] if tc.arguments else ""})
+                return {}
 
     def _execute_tool_only(self, tc, args: dict) -> tuple:
         """Execute a tool without UI - for parallel execution"""
