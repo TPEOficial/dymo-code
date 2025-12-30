@@ -211,9 +211,10 @@ def create_file(file_path: str = "", content: str = "") -> str:
         return f"Error: {str(e)}"
 
 
-def run_command(command: str = "") -> str:
-    """Execute a shell command and return output"""
-    if not command: return "Error: command is required"
+def run_command(command: str = "", timeout: int = 300) -> str:
+    """Execute a shell command with real-time output streaming"""
+    if not command:
+        return "Error: command is required"
 
     # Check command permissions before executing
     try:
@@ -223,22 +224,55 @@ def run_command(command: str = "") -> str:
     except ImportError:
         pass  # If module not available, allow execution
 
+    from .ui import StreamingConsole
+
+    # Truncate command for title display
+    display_cmd = command[:60] + "..." if len(command) > 60 else command
+
+    console_display = StreamingConsole(title=display_cmd)
+    console_display.start()
+
+    output_lines = []
+    exit_code = 0
+
     try:
-        result = subprocess.run(
+        # Use Popen for streaming output
+        process = subprocess.Popen(
             command,
             shell=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout for proper ordering
             text=True,
-            timeout=30,
-            cwd=os.getcwd()
+            bufsize=1,  # Line buffered
+            cwd=os.getcwd(),
+            env={**os.environ, 'PYTHONUNBUFFERED': '1'}  # Force unbuffered Python
         )
-        output = ""
-        if result.stdout: output += result.stdout
-        if result.stderr: output += f"\n[stderr]\n{result.stderr}" if output else result.stderr
-        if result.returncode != 0: output += f"\n[exit code: {result.returncode}]"
-        return output.strip() if output.strip() else "(No output)"
-    except subprocess.TimeoutExpired: return "Error: Command timed out after 30 seconds."
-    except Exception as e: return f"Error: {str(e)}"
+
+        # Read output line by line as it's produced
+        for line in iter(process.stdout.readline, ''):
+            if line:
+                output_lines.append(line)
+                console_display.append(line)
+
+        process.wait(timeout=timeout)
+        exit_code = process.returncode
+
+    except subprocess.TimeoutExpired:
+        process.kill()
+        console_display.append("[Command timed out!]")
+        exit_code = -1
+    except Exception as e:
+        console_display.append(f"[Error: {str(e)}]")
+        exit_code = -1
+
+    console_display.finish(exit_code)
+
+    # Return complete output for tool result
+    result = ''.join(output_lines)
+    if exit_code != 0:
+        result += f"\n[exit code: {exit_code}]"
+
+    return result.strip() if result.strip() else "(No output)"
 
 
 def move_path(source: str = "", destination: str = "") -> str:

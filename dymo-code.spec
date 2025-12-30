@@ -12,6 +12,17 @@ block_cipher = None
 # Get the project root
 project_root = Path(SPECPATH)
 
+# Check for icon file and report status
+icon_path = project_root / 'docs' / 'images' / 'icon.ico'
+icon_exists = icon_path.exists()
+print(f"[BUILD INFO] Project root: {project_root}")
+print(f"[BUILD INFO] Icon path: {icon_path}")
+print(f"[BUILD INFO] Icon exists: {icon_exists}")
+if icon_exists:
+    print(f"[BUILD INFO] Icon size: {icon_path.stat().st_size} bytes")
+else:
+    print(f"[BUILD WARNING] Icon file not found! The executable will have no icon.")
+
 # Get certifi certificate path for SSL support
 try:
     import certifi
@@ -134,5 +145,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(project_root / 'docs' / 'images' / 'icon.ico') if (project_root / 'docs' / 'images' / 'icon.ico').exists() else None,
+    icon=str(icon_path) if icon_exists else None,
 )

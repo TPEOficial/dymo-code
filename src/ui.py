@@ -1049,3 +1049,70 @@ def print_keybindings():
         console.print()
 
     except ImportError: console.print(f"\n[{COLORS['error']}]Keybinding system not available.[/]\n")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Streaming Console for Real-Time Command Output
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StreamingConsole:
+    """Live updating console panel for command output with ANSI color support"""
+
+    def __init__(self, title: str = "Console", max_lines: int = 100):
+        self.title = title
+        self.lines = []
+        self.live = None
+        self.max_lines = max_lines
+        self.exit_code = None
+
+    def start(self):
+        """Start the live display"""
+        from rich.live import Live
+        self.live = Live(
+            self._render(),
+            console=console,
+            refresh_per_second=15,
+            transient=True  # Will be replaced by final static panel
+        )
+        self.live.start()
+
+    def append(self, line: str):
+        """Append a line of output"""
+        self.lines.append(line.rstrip('\n\r'))
+        # Keep last N lines for scrollback
+        if len(self.lines) > self.max_lines:
+            self.lines = self.lines[-self.max_lines:]
+        if self.live:
+            self.live.update(self._render())
+
+    def _render(self):
+        """Render the panel with current output"""
+        # Use Text.from_ansi to preserve colors from command output
+        if self.lines:
+            content = '\n'.join(self.lines)
+            text = Text.from_ansi(content)
+        else:
+            text = Text("Waiting for output...", style=f"dim {COLORS['muted']}")
+
+        # Title with exit code if finished
+        title = f"[bold cyan]$ {self.title}[/bold cyan]"
+        if self.exit_code is not None:
+            code_style = COLORS['success'] if self.exit_code == 0 else COLORS['error']
+            title += f" [{code_style}](exit: {self.exit_code})[/{code_style}]"
+
+        return Panel(
+            text,
+            title=title,
+            title_align="left",
+            border_style=COLORS['muted'],
+            box=ROUNDED,
+            padding=(0, 1)
+        )
+
+    def finish(self, exit_code: int):
+        """Finish streaming and show final static panel"""
+        self.exit_code = exit_code
+        if self.live:
+            self.live.stop()
+        # Print final static panel that persists
+        console.print(self._render())
