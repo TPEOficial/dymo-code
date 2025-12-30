@@ -348,6 +348,11 @@ class Agent:
 
         # Find the best model from fallback providers
         for provider in fallback_providers:
+            # Check if the client for this provider is actually available (package installed)
+            client = self.client_manager.get_client_for_provider(provider)
+            if client and not client.is_available():
+                continue  # Skip if client package not installed or not configured
+
             # First try the default model for this provider
             default_model = get_default_model(provider)
             if default_model and default_model in AVAILABLE_MODELS:

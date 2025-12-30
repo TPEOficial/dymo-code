@@ -488,14 +488,26 @@ class CommandHandler:
             from .lib.providers import API_KEY_PROVIDERS, get_providers_string, is_valid_provider
 
             if not args:
-                display_error("Usage: /setapikey <provider> <key>")
+                display_error("Usage: /setapikey <provider> <key> [--name \"friendly name\"]")
                 console.print(f"[{COLORS['muted']}]Providers: {get_providers_string()}[/]")
                 console.print(f"[{COLORS['muted']}]You can add multiple keys per provider for auto-rotation[/]")
+                console.print(f"[{COLORS['muted']}]Optional: Add --name to label your keys (e.g., --name \"Personal\")[/]")
                 return True, None
+
+            # Parse args for optional --name parameter
+            key_name = None
+            if "--name" in args:
+                import re
+                # Match --name "value" or --name 'value' or --name value
+                name_match = re.search(r'--name\s+["\']([^"\']+)["\']|--name\s+(\S+)', args)
+                if name_match:
+                    key_name = name_match.group(1) or name_match.group(2)
+                    # Remove the --name part from args
+                    args = re.sub(r'--name\s+["\'][^"\']+["\']|--name\s+\S+', '', args).strip()
 
             parts = args.split(maxsplit=1)
             if len(parts) < 2:
-                display_error("Usage: /setapikey <provider> <key>")
+                display_error("Usage: /setapikey <provider> <key> [--name \"friendly name\"]")
                 return True, None
 
             provider = parts[0].lower()
@@ -506,20 +518,67 @@ class CommandHandler:
                 return True, None
 
             # Add key to the pool (supports multiple keys)
-            added = user_config.add_api_key(provider, api_key)
+            added = user_config.add_api_key(provider, api_key, key_name)
             if added:
                 # Also set in current environment so it takes effect immediately
                 os.environ[f"{provider.upper()}_API_KEY"] = api_key
                 # Update the API key manager
                 from .api_key_manager import api_key_manager
-                api_key_manager.add_key(provider, api_key)
+                api_key_manager.add_key(provider, api_key, key_name)
 
                 key_count = user_config.get_api_key_count(provider)
-                display_success(f"API key for {provider.upper()} added (total: {key_count} key{'s' if key_count > 1 else ''})")
+                name_info = f" as \"{key_name}\"" if key_name else ""
+                display_success(f"API key for {provider.upper()} added{name_info} (total: {key_count} key{'s' if key_count > 1 else ''})")
                 if key_count > 1:
                     console.print(f"[{COLORS['muted']}]Keys will auto-rotate on rate limit errors[/]")
             else:
                 display_info(f"This API key already exists for {provider.upper()}")
+            return True, None
+
+        elif name == "renameapikey":
+            from .lib.providers import get_providers_string, is_valid_provider
+
+            if not args:
+                display_error("Usage: /renameapikey <provider> <index> <name>")
+                console.print(f"[{COLORS['muted']}]Example: /renameapikey groq 1 \"Personal Key\"[/]")
+                return True, None
+
+            parts = args.split(maxsplit=2)
+            if len(parts) < 3:
+                display_error("Usage: /renameapikey <provider> <index> <name>")
+                return True, None
+
+            provider = parts[0].lower()
+            if not is_valid_provider(provider):
+                display_error(f"Invalid provider. Use: {get_providers_string()}")
+                return True, None
+
+            try:
+                index = int(parts[1]) - 1  # Convert to 0-based index
+                new_name = parts[2].strip().strip('"\'')
+
+                # Get the key at this index
+                keys = user_config.get_api_keys_list(provider)
+                if index < 0 or index >= len(keys):
+                    display_error(f"Invalid key index. Use /apikeys to see available keys.")
+                    return True, None
+
+                # Get the actual key
+                key_data = keys[index]
+                if isinstance(key_data, dict):
+                    actual_key = key_data.get("key", "")
+                else:
+                    actual_key = key_data
+
+                # Update the name in the manager
+                from .api_key_manager import api_key_manager
+                if api_key_manager.update_key_name(provider, actual_key, new_name):
+                    display_success(f"API key #{index+1} for {provider.upper()} renamed to \"{new_name}\"")
+                else:
+                    display_error(f"Failed to rename key")
+            except ValueError:
+                display_error("Invalid index. Use a number (e.g., /renameapikey groq 1 \"My Key\")")
+
             return True, None
 
         elif name == "apikeys":
@@ -555,12 +614,21 @@ class CommandHandler:
                                 'cooldown': 'yellow'
                             }.get(status, 'white')
 
-                            masked = key_info.get('masked_key', info['keys'][i] if i < len(info['keys']) else '****')
-                            console.print(f"      [{i+1}] {masked} [{status_color}]({status})[/]{current}")
+                            masked = key_info.get('masked_key', '****')
+                            key_name = key_info.get('name')
+
+                            # Show name if available, otherwise just masked key
+                            if key_name:
+                                display_text = f"\"{key_name}\" ({masked})"
+                            else:
+                                display_text = masked
+
+                            console.print(f"      [{i+1}] {display_text} [{status_color}]({status})[/]{current}")
 
                         console.print()
 
                 console.print(f"[{COLORS['muted']}]Keys auto-rotate on rate limit or credit errors[/]")
+                console.print(f"[{COLORS['muted']}]Rename keys with: /renameapikey <provider> <index> <name>[/]")
                 console.print(f"[{COLORS['muted']}]Delete keys with: /delapikey <provider> <index>[/]\n")
             return True, None
 

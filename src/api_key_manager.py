@@ -27,6 +27,7 @@ class KeyStatus(Enum):
 class APIKeyInfo:
     """Information about an API key"""
     key: str
+    name: Optional[str] = None  # Optional friendly name for the key
     status: KeyStatus = KeyStatus.ACTIVE
     last_used: Optional[datetime] = None
     last_error: Optional[str] = None
@@ -40,6 +41,11 @@ class APIKeyInfo:
         if len(self.key) > 12:
             return f"{self.key[:4]}...{self.key[-4:]}"
         return "****"
+
+    @property
+    def display_name(self) -> str:
+        """Return display name (custom name or masked key)"""
+        return self.name if self.name else self.masked_key
 
     def is_available(self) -> bool:
         """Check if key is currently available for use"""
@@ -99,17 +105,26 @@ class ProviderKeyPool:
         self._cooldown_duration = timedelta(seconds=60)  # 1 minute cooldown
         self._rate_limit_cooldown = timedelta(minutes=5)  # 5 minutes for rate limits
 
-    def add_key(self, key: str) -> bool:
-        """Add a new API key to the pool"""
+    def add_key(self, key: str, name: Optional[str] = None) -> bool:
+        """Add a new API key to the pool with optional name"""
         with self._lock:
             # Check if key already exists
             for existing in self.keys:
-                if existing.key == key:
-                    return False
+                if existing.key == key: return False
 
-            self.keys.append(APIKeyInfo(key=key))
-            log_debug(f"Added new API key to {self.provider} pool (total: {len(self.keys)})")
+            self.keys.append(APIKeyInfo(key=key, name=name))
+            display = name if name else f"{key[:4]}...{key[-4:]}" if len(key) > 12 else "****"
+            log_debug(f"Added new API key '{display}' to {self.provider} pool (total: {len(self.keys)})")
             return True
+
+    def update_key_name(self, key: str, name: Optional[str]) -> bool:
+        """Update the name of an existing API key"""
+        with self._lock:
+            for key_info in self.keys:
+                if key_info.key == key or key_info.masked_key == key:
+                    key_info.name = name
+                    return True
+            return False
 
     def remove_key(self, key: str) -> bool:
         """Remove an API key from the pool"""
@@ -117,8 +132,7 @@ class ProviderKeyPool:
             for i, key_info in enumerate(self.keys):
                 if key_info.key == key or key_info.masked_key == key:
                     self.keys.pop(i)
-                    if self._current_index >= len(self.keys):
-                        self._current_index = 0
+                    if self._current_index >= len(self.keys): self._current_index = 0
                     log_debug(f"Removed API key from {self.provider} pool (remaining: {len(self.keys)})")
                     return True
             return False
@@ -221,6 +235,8 @@ class ProviderKeyPool:
             return [
                 {
                     "masked_key": k.masked_key,
+                    "name": k.name,
+                    "display_name": k.display_name,
                     "status": k.status.value,
                     "requests": k.requests_count,
                     "errors": k.error_count,
@@ -269,6 +285,7 @@ class APIKeyManager:
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
             "google": "GOOGLE_API_KEY",
+            "cerebras": "CEREBRAS_API_KEY",
         }
         self._provider_lock = threading.Lock()
         self._initialized = True
@@ -277,28 +294,33 @@ class APIKeyManager:
         self._load_from_storage()
 
     def _load_from_storage(self):
-        """Load API keys from storage"""
+        """Load API keys from storage (filters out placeholders)"""
         try:
             from .storage import user_config
 
             for provider in self._env_key_map.keys():
-                pool = self._get_or_create_pool(provider)
-
                 # Load multi-keys if available
                 multi_keys = user_config.get_api_keys_list(provider)
                 if multi_keys:
-                    for key in multi_keys:
-                        pool.add_key(key)
+                    for key_data in multi_keys:
+                        # Support both old format (string) and new format (dict with key/name)
+                        if isinstance(key_data, dict):
+                            key = key_data.get("key", "")
+                            name = key_data.get("name")
+                            self.add_key(provider, key, name)
+                        else:
+                            # Legacy format: just a string
+                            self.add_key(provider, key_data)
                 else:
                     # Fallback to single key (backward compatibility)
                     single_key = user_config.get_api_key(provider)
                     if single_key:
-                        pool.add_key(single_key)
+                        self.add_key(provider, single_key)
 
                 # Also check environment variable
                 env_key = os.environ.get(self._env_key_map[provider])
                 if env_key:
-                    pool.add_key(env_key)
+                    self.add_key(provider, env_key)
 
         except Exception as e:
             log_error("Failed to load API keys from storage", e)
@@ -311,11 +333,16 @@ class APIKeyManager:
                 self._pools[provider] = ProviderKeyPool(provider)
             return self._pools[provider]
 
-    def add_key(self, provider: str, key: str) -> bool:
-        """Add an API key for a provider"""
+    def add_key(self, provider: str, key: str, name: Optional[str] = None) -> bool:
+        """Add an API key for a provider with optional name (rejects placeholders)"""
+        # Reject placeholder keys
+        if self._is_placeholder_key(key):
+            log_debug(f"Rejected placeholder key for {provider}")
+            return False
+
         provider = provider.lower()
         pool = self._get_or_create_pool(provider)
-        success = pool.add_key(key)
+        success = pool.add_key(key, name)
 
         if success:
             # Also update environment for immediate use
@@ -326,6 +353,18 @@ class APIKeyManager:
             # Save to storage
             self._save_to_storage(provider)
 
+        return success
+
+    def update_key_name(self, provider: str, key: str, name: Optional[str]) -> bool:
+        """Update the name of an existing API key"""
+        provider = provider.lower()
+        pool = self._pools.get(provider)
+        if not pool:
+            return False
+
+        success = pool.update_key_name(key, name)
+        if success:
+            self._save_to_storage(provider)
         return success
 
     def remove_key(self, provider: str, key: str) -> bool:
@@ -341,26 +380,35 @@ class APIKeyManager:
         return success
 
     def _save_to_storage(self, provider: str):
-        """Save keys to storage"""
+        """Save keys to storage with optional names"""
         try:
             from .storage import user_config
 
             pool = self._pools.get(provider)
             if pool:
-                keys = [k.key for k in pool.keys]
-                user_config.set_api_keys_list(provider, keys)
+                # Save as list of objects with key and optional name
+                keys_data = []
+                for k in pool.keys:
+                    if k.name:
+                        keys_data.append({"key": k.key, "name": k.name})
+                    else:
+                        keys_data.append(k.key)  # Simple string for backward compatibility
+                user_config.set_api_keys_list(provider, keys_data)
         except Exception as e:
             log_error("Failed to save API keys to storage", e)
 
     def get_key(self, provider: str) -> Optional[str]:
-        """Get the current active API key for a provider"""
+        """Get the current active API key for a provider (excludes placeholders)"""
         provider = provider.lower()
         pool = self._pools.get(provider)
         if not pool:
             # Try to get from environment as fallback
             env_var = self._env_key_map.get(provider)
             if env_var:
-                return os.environ.get(env_var)
+                key = os.environ.get(env_var)
+                # Don't return placeholder keys
+                if key and not self._is_placeholder_key(key):
+                    return key
             return None
 
         key = pool.get_current_key()
@@ -441,15 +489,40 @@ class APIKeyManager:
             info.append(self.get_provider_info(provider))
         return info
 
+    def _is_placeholder_key(self, key: str) -> bool:
+        """Check if a key appears to be a placeholder/example value"""
+        if not key:
+            return True
+        key_lower = key.lower()
+        placeholder_patterns = [
+            "your_",
+            "_here",
+            "example",
+            "placeholder",
+            "xxx",
+            "insert",
+            "paste",
+            "api_key",
+            "apikey",
+            "enter_",
+            "put_",
+            "add_",
+            "<",
+            ">",
+        ]
+        return any(pattern in key_lower for pattern in placeholder_patterns)
+
     def has_available_key(self, provider: str) -> bool:
-        """Check if provider has any available keys"""
+        """Check if provider has any available keys (excluding placeholders)"""
         provider = provider.lower()
         pool = self._pools.get(provider)
         if not pool:
             # Check environment as fallback
             env_var = self._env_key_map.get(provider)
             if env_var:
-                return bool(os.environ.get(env_var))
+                key = os.environ.get(env_var, "")
+                # Make sure it's not a placeholder value
+                return bool(key) and not self._is_placeholder_key(key)
             return False
         return pool.has_available_keys()
 

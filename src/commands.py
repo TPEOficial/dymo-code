@@ -213,9 +213,9 @@ COMMANDS: Dict[str, Command] = {
     ),
     "setapikey": Command(
         name="setapikey",
-        description="Set API key for a provider",
+        description="Set API key for a provider (optionally with a name)",
         category=CommandCategory.PROVIDERS,
-        usage="/setapikey <provider> <key>",
+        usage="/setapikey <provider> <key> [--name \"friendly name\"]",
         has_args=True,
         arg_hint="provider key"
     ),
@@ -232,6 +232,14 @@ COMMANDS: Dict[str, Command] = {
         usage="/delapikey <provider>",
         has_args=True,
         arg_hint="provider"
+    ),
+    "renameapikey": Command(
+        name="renameapikey",
+        description="Rename an API key",
+        category=CommandCategory.PROVIDERS,
+        usage="/renameapikey <provider> <index> <name>",
+        has_args=True,
+        arg_hint="provider index name"
     ),
     "getapikey": Command(
         name="getapikey",

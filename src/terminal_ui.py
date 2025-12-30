@@ -8,12 +8,14 @@ Terminal UI with command autocomplete using prompt_toolkit
 """
 
 import sys
+import os
 import threading
 import time
 from typing import Optional, List, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from rich.console import Console
 from rich.text import Text
@@ -188,6 +190,230 @@ class CommandCompleter(Completer):
                 # Use #B4B4B4 instead of #888 for better visibility
                 display_meta=HTML(f'<style fg="#B4B4B4">{icon} {cmd.description[:40]}</style>')
             )
+
+
+class PathCompleter(Completer):
+    """Custom completer for @ path references"""
+
+    # File type icons
+    FILE_ICONS = {
+        ".py": "🐍",
+        ".js": "📜",
+        ".ts": "📘",
+        ".tsx": "⚛️",
+        ".jsx": "⚛️",
+        ".json": "📋",
+        ".md": "📝",
+        ".txt": "📄",
+        ".yml": "⚙️",
+        ".yaml": "⚙️",
+        ".toml": "⚙️",
+        ".html": "🌐",
+        ".css": "🎨",
+        ".scss": "🎨",
+        ".sql": "🗃️",
+        ".sh": "🖥️",
+        ".bat": "🖥️",
+        ".ps1": "🖥️",
+        ".env": "🔐",
+        ".gitignore": "🔧",
+        ".dockerfile": "🐳",
+    }
+
+    def __init__(self, base_path: str = None):
+        self.base_path = base_path or os.getcwd()
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+
+        # Find the last @ symbol
+        at_index = text.rfind("@")
+        if at_index == -1:
+            return
+
+        # Get the path part after @
+        path_part = text[at_index + 1:]
+
+        # Don't complete if there's a space after the path (path is complete)
+        # But allow spaces in paths if they're in quotes
+        if " " in path_part and not (path_part.startswith('"') or path_part.startswith("'")):
+            # Check if this looks like a complete path followed by more text
+            if not os.path.exists(os.path.join(self.base_path, path_part.split()[0])):
+                return
+
+        # Handle empty path - show root directory contents
+        if not path_part:
+            search_dir = self.base_path
+            prefix = ""
+        else:
+            # Determine search directory and prefix
+            full_path = os.path.join(self.base_path, path_part)
+
+            if os.path.isdir(full_path):
+                # Path is a complete directory - show its contents
+                search_dir = full_path
+                prefix = path_part.rstrip("/\\") + "/"
+            else:
+                # Path is partial - search in parent directory
+                parent_dir = os.path.dirname(full_path)
+                if parent_dir and os.path.isdir(parent_dir):
+                    search_dir = parent_dir
+                    prefix = os.path.dirname(path_part)
+                    if prefix:
+                        prefix = prefix.rstrip("/\\") + "/"
+                else:
+                    search_dir = self.base_path
+                    prefix = ""
+
+        # Get matching files and directories
+        try:
+            entries = list(os.scandir(search_dir))
+        except (PermissionError, FileNotFoundError):
+            return
+
+        # Filter by partial name if typing
+        filter_name = os.path.basename(path_part).lower() if path_part else ""
+
+        matches = []
+        for entry in entries:
+            # Skip hidden files unless explicitly typing a dot
+            if entry.name.startswith(".") and not filter_name.startswith("."):
+                continue
+
+            if not filter_name or entry.name.lower().startswith(filter_name):
+                matches.append(entry)
+
+        # Sort: directories first, then files, alphabetically
+        matches.sort(key=lambda e: (not e.is_dir(), e.name.lower()))
+
+        # Generate completions
+        for entry in matches[:12]:
+            is_dir = entry.is_dir()
+            name = entry.name
+
+            # Build completion path
+            if is_dir:
+                completion_path = prefix + name + "/"
+                icon = "📁"
+                meta = "directory"
+            else:
+                completion_path = prefix + name
+                ext = os.path.splitext(name)[1].lower()
+                icon = self.FILE_ICONS.get(ext, "📄")
+
+                # Get file size for meta
+                try:
+                    size = entry.stat().st_size
+                    if size < 1024:
+                        meta = f"{size} B"
+                    elif size < 1024 * 1024:
+                        meta = f"{size // 1024} KB"
+                    else:
+                        meta = f"{size // (1024 * 1024)} MB"
+                except OSError:
+                    meta = "file"
+
+            # Calculate start position (replace from after @)
+            start_pos = -len(path_part)
+
+            yield Completion(
+                completion_path,
+                start_position=start_pos,
+                display=HTML(f'<b>{icon} {name}</b>{"/" if is_dir else ""}'),
+                display_meta=HTML(f'<style fg="#B4B4B4">{meta}</style>')
+            )
+
+
+class CombinedCompleter(Completer):
+    """Combines multiple completers (commands and paths)"""
+
+    def __init__(self, base_path: str = None):
+        self.command_completer = CommandCompleter()
+        self.path_completer = PathCompleter(base_path)
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+
+        # Check for slash commands first
+        if text.startswith("/"):
+            yield from self.command_completer.get_completions(document, complete_event)
+            return
+
+        # Check for @ path references
+        if "@" in text:
+            yield from self.path_completer.get_completions(document, complete_event)
+            return
+
+
+def get_path_suggestions(text: str, base_path: str = None) -> List[dict]:
+    """
+    Get path suggestions for @ path references.
+    Returns a list of dicts with: name, path, is_dir, icon, size
+
+    Used by async_input and interactive_input for simple Tab completion.
+    """
+    base_path = base_path or os.getcwd()
+
+    # Find the path part after @
+    at_index = text.rfind("@")
+    if at_index == -1:
+        return []
+
+    path_part = text[at_index + 1:]
+
+    # Don't complete if there's a space after the path
+    if " " in path_part:
+        return []
+
+    # Determine search directory
+    if not path_part:
+        search_dir = base_path
+        prefix = ""
+    else:
+        full_path = os.path.join(base_path, path_part)
+
+        if os.path.isdir(full_path):
+            search_dir = full_path
+            prefix = path_part.rstrip("/\\") + "/"
+        else:
+            parent_dir = os.path.dirname(full_path)
+            if parent_dir and os.path.isdir(parent_dir):
+                search_dir = parent_dir
+                prefix = os.path.dirname(path_part)
+                if prefix:
+                    prefix = prefix.rstrip("/\\") + "/"
+            else:
+                search_dir = base_path
+                prefix = ""
+
+    # Get matching entries
+    try:
+        entries = list(os.scandir(search_dir))
+    except (PermissionError, FileNotFoundError):
+        return []
+
+    # Filter
+    filter_name = os.path.basename(path_part).lower() if path_part else ""
+
+    matches = []
+    for entry in entries:
+        if entry.name.startswith(".") and not filter_name.startswith("."):
+            continue
+        if not filter_name or entry.name.lower().startswith(filter_name):
+            is_dir = entry.is_dir()
+            matches.append({
+                "name": entry.name,
+                "path": prefix + entry.name + ("/" if is_dir else ""),
+                "is_dir": is_dir,
+                "icon": "📁" if is_dir else PathCompleter.FILE_ICONS.get(
+                    os.path.splitext(entry.name)[1].lower(), "📄"
+                ),
+            })
+
+    # Sort: directories first, then alphabetically
+    matches.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+
+    return matches[:12]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -471,7 +697,7 @@ class TerminalUI:
         """Lazy initialization of prompt session"""
         if self._session is None:
             self._session = PromptSession(
-                completer=CommandCompleter(),
+                completer=CombinedCompleter(),
                 style=get_prompt_style(),
                 complete_while_typing=True,
                 complete_in_thread=True,

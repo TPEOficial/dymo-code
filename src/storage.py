@@ -263,9 +263,9 @@ class UserConfig:
     # Multi-API Keys Management (New)
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def add_api_key(self, provider: str, api_key: str) -> bool:
+    def add_api_key(self, provider: str, api_key: str, name: str = None) -> bool:
         """
-        Add an API key to a provider's key list.
+        Add an API key to a provider's key list with optional friendly name.
         Returns True if key was added, False if already exists.
         """
         list_key = f"{provider.upper()}_API_KEYS"
@@ -277,20 +277,38 @@ class UserConfig:
         legacy_key = f"{provider.upper()}_API_KEY"
         if legacy_key in self._api_keys and self._api_keys[legacy_key]:
             legacy_val = self._api_keys[legacy_key]
-            if legacy_val not in self._api_keys[list_key]:
+            if not self._key_exists_in_list(legacy_val, self._api_keys[list_key]):
                 self._api_keys[list_key].append(legacy_val)
 
         # Check if key already exists
-        if api_key in self._api_keys[list_key]:
+        if self._key_exists_in_list(api_key, self._api_keys[list_key]):
             return False
 
-        self._api_keys[list_key].append(api_key)
+        # Add key with optional name
+        if name:
+            self._api_keys[list_key].append({"key": api_key, "name": name})
+        else:
+            self._api_keys[list_key].append(api_key)
 
         # Also set as primary for backward compatibility
-        self._api_keys[legacy_key] = self._api_keys[list_key][0]
+        first_key = self._api_keys[list_key][0]
+        if isinstance(first_key, dict):
+            self._api_keys[legacy_key] = first_key.get("key", "")
+        else:
+            self._api_keys[legacy_key] = first_key
 
         self._save_api_keys()
         return True
+
+    def _key_exists_in_list(self, api_key: str, keys_list: list) -> bool:
+        """Check if an API key exists in a list (handles both string and dict formats)"""
+        for item in keys_list:
+            if isinstance(item, dict):
+                if item.get("key") == api_key:
+                    return True
+            elif item == api_key:
+                return True
+        return False
 
     def remove_api_key_by_index(self, provider: str, index: int) -> bool:
         """Remove an API key by index from provider's list"""
@@ -308,7 +326,12 @@ class UserConfig:
         # Update primary key
         legacy_key = f"{provider.upper()}_API_KEY"
         if keys_list:
-            self._api_keys[legacy_key] = keys_list[0]
+            first_key = keys_list[0]
+            # Handle both string and dict formats
+            if isinstance(first_key, dict):
+                self._api_keys[legacy_key] = first_key.get("key", "")
+            else:
+                self._api_keys[legacy_key] = first_key
         else:
             if legacy_key in self._api_keys:
                 del self._api_keys[legacy_key]
@@ -333,7 +356,7 @@ class UserConfig:
         return []
 
     def set_api_keys_list(self, provider: str, keys: list):
-        """Set the full list of API keys for a provider"""
+        """Set the full list of API keys for a provider (supports strings or dicts with key/name)"""
         list_key = f"{provider.upper()}_API_KEYS"
         legacy_key = f"{provider.upper()}_API_KEY"
 
@@ -341,7 +364,12 @@ class UserConfig:
 
         # Update primary for backward compatibility
         if keys:
-            self._api_keys[legacy_key] = keys[0]
+            first_key = keys[0]
+            # Handle both string and dict formats
+            if isinstance(first_key, dict):
+                self._api_keys[legacy_key] = first_key.get("key", "")
+            else:
+                self._api_keys[legacy_key] = first_key
         elif legacy_key in self._api_keys:
             del self._api_keys[legacy_key]
 
@@ -357,15 +385,31 @@ class UserConfig:
 
         for provider in API_KEY_PROVIDERS:
             keys = self.get_api_keys_list(provider)
-            masked_keys = []
-            for key in keys:
-                if len(key) > 12:
-                    masked_keys.append(f"{key[:4]}...{key[-4:]}")
+            keys_info = []
+            for key_data in keys:
+                # Handle both string and dict formats
+                if isinstance(key_data, dict):
+                    key = key_data.get("key", "")
+                    name = key_data.get("name")
                 else:
-                    masked_keys.append("****")
+                    key = key_data
+                    name = None
+
+                # Create masked key
+                if len(key) > 12:
+                    masked = f"{key[:4]}...{key[-4:]}"
+                else:
+                    masked = "****"
+
+                keys_info.append({
+                    "masked_key": masked,
+                    "name": name,
+                    "display_name": name if name else masked
+                })
+
             info[provider] = {
                 "count": len(keys),
-                "keys": masked_keys
+                "keys": keys_info
             }
 
         return info

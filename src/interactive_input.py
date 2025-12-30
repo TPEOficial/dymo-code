@@ -20,6 +20,7 @@ from .commands import (
     CATEGORY_ICONS, CATEGORY_NAMES
 )
 from .config import COLORS
+from .terminal_ui import get_path_suggestions
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Console Setup
@@ -158,9 +159,10 @@ class InteractiveInput:
     def __init__(self):
         self.buffer = ""
         self.cursor_pos = 0
-        self.suggestions: List[Command] = []
+        self.suggestions: List = []  # Can be Command or path dict
         self.selected_index = 0
         self.showing_suggestions = False
+        self.suggestion_type = "command"  # "command" or "path"
         self.history: List[str] = []
         self.history_index = -1
 
@@ -187,11 +189,19 @@ class InteractiveInput:
         sys.stdout.flush()
 
     def _update_suggestions(self):
-        """Update command suggestions based on current buffer"""
+        """Update command or path suggestions based on current buffer"""
         if self.buffer.startswith("/"):
+            # Command suggestions
             partial = self.buffer[1:]  # Remove the /
             self.suggestions = get_command_suggestions(partial)
             self.showing_suggestions = len(self.suggestions) > 0
+            self.suggestion_type = "command"
+            self.selected_index = 0
+        elif "@" in self.buffer:
+            # Path suggestions
+            self.suggestions = get_path_suggestions(self.buffer)
+            self.showing_suggestions = len(self.suggestions) > 0
+            self.suggestion_type = "path"
             self.selected_index = 0
         else:
             self.suggestions = []
@@ -201,15 +211,54 @@ class InteractiveInput:
         """Render the suggestions panel below the input"""
         if self.showing_suggestions and self.suggestions:
             console.print()  # New line after input
-            console.print(render_command_suggestions(self.suggestions, self.selected_index))
+            if self.suggestion_type == "command":
+                console.print(render_command_suggestions(self.suggestions, self.selected_index))
+            else:
+                console.print(self._render_path_suggestions())
+
+    def _render_path_suggestions(self) -> Panel:
+        """Render path suggestions as a styled panel"""
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column("Icon", width=3)
+        table.add_column("Name", style="white")
+        table.add_column("Type", style=f"{COLORS['muted']}")
+
+        for i, path_info in enumerate(self.suggestions[:8]):
+            icon = path_info["icon"]
+            name = path_info["name"]
+            meta = "directory" if path_info["is_dir"] else "file"
+
+            if i == self.selected_index:
+                table.add_row(
+                    f"[{COLORS['primary']}]{icon}[/]",
+                    f"[bold {COLORS['primary']}]{name}[/]",
+                    f"[{COLORS['primary']}]{meta}[/]"
+                )
+            else:
+                table.add_row(icon, name, meta)
+
+        return Panel(
+            table,
+            title="[bold]@ Path[/bold]",
+            border_style=COLORS['primary'],
+            box=ROUNDED,
+            padding=(0, 1)
+        )
 
     def _complete_selected(self):
         """Complete input with selected suggestion"""
         if self.suggestions and 0 <= self.selected_index < len(self.suggestions):
-            cmd = self.suggestions[self.selected_index]
-            self.buffer = f"/{cmd.name}"
-            if cmd.has_args:
-                self.buffer += " "
+            if self.suggestion_type == "command":
+                cmd = self.suggestions[self.selected_index]
+                self.buffer = f"/{cmd.name}"
+                if cmd.has_args:
+                    self.buffer += " "
+            else:
+                # Path completion
+                at_index = self.buffer.rfind("@")
+                path_info = self.suggestions[self.selected_index]
+                self.buffer = self.buffer[:at_index + 1] + path_info["path"]
+
             self.cursor_pos = len(self.buffer)
             self.showing_suggestions = False
 

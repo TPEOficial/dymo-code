@@ -59,6 +59,13 @@ PROVIDERS: Dict[str, ProviderInfo] = {
         description="Gemini models API",
         api_key_url="https://aistudio.google.com/apikey",
         env_key="GOOGLE_API_KEY"
+    ),
+    "cerebras": ProviderInfo(
+        id="cerebras",
+        name="Cerebras",
+        description="Ultra-fast inference API",
+        api_key_url="https://cloud.cerebras.ai/",
+        env_key="CEREBRAS_API_KEY"
     )
 }
 
@@ -85,7 +92,8 @@ DEFAULT_MODELS: Dict[str, str] = {
     "openai": "gpt-4o",          # GPT-4o - most capable
     "anthropic": "claude-sonnet", # Claude Sonnet - balanced
     "openrouter": "llama",       # Llama via OpenRouter
-    "ollama": "ollama-qwen"      # Qwen 2.5 Coder - best local for coding
+    "ollama": "ollama-qwen",     # Qwen 2.5 Coder - best local for coding
+    "cerebras": "cerebras-llama" # Llama 3.3 70B - ultra-fast
 }
 
 

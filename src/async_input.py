@@ -18,6 +18,7 @@ from rich.text import Text
 
 from .config import COLORS
 from .commands import get_command_suggestions, COMMANDS, Command
+from .terminal_ui import get_path_suggestions
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Windows-specific imports
@@ -212,12 +213,25 @@ class NonBlockingInput:
                     # Tab - autocomplete
                     elif char == '\t':
                         if buffer.startswith("/"):
+                            # Command autocomplete
                             suggestions = get_command_suggestions(buffer[1:])[:6]
                             if suggestions:
                                 cmd = suggestions[0]
                                 buffer = f"/{cmd.name}"
                                 if cmd.has_args:
                                     buffer += " "
+                                self._clear_line()
+                                self._show_prompt()
+                                sys.stdout.write(buffer)
+                                sys.stdout.flush()
+                        elif "@" in buffer:
+                            # Path autocomplete
+                            path_suggestions = get_path_suggestions(buffer)
+                            if path_suggestions:
+                                # Find @ position and replace path part
+                                at_index = buffer.rfind("@")
+                                new_path = path_suggestions[0]["path"]
+                                buffer = buffer[:at_index + 1] + new_path
                                 self._clear_line()
                                 self._show_prompt()
                                 sys.stdout.write(buffer)

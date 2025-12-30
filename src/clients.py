@@ -1,6 +1,6 @@
 """
 AI Client abstraction layer for Dymo Code
-Supports multiple providers: Groq, OpenRouter, Anthropic (Claude), OpenAI, Ollama, Google Gemini
+Supports multiple providers: Groq, OpenRouter, Anthropic (Claude), OpenAI, Ollama, Google Gemini, Cerebras
 With automatic API key rotation on rate limits or credit exhaustion
 """
 
@@ -110,6 +110,11 @@ class GroqClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
+        # Check if package is installed
+        try:
+            import groq
+        except ImportError:
+            return False
         return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("GROQ_API_KEY"))
 
     def _handle_error_and_retry(self, error: Exception, messages, model, tools, retry_count: int = 0):
@@ -559,6 +564,11 @@ class OpenRouterClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
+        # OpenRouter uses the openai package
+        try:
+            import openai
+        except ImportError:
+            return False
         return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENROUTER_API_KEY"))
 
     def stream_chat(
@@ -705,6 +715,11 @@ class AnthropicClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
+        # Check if package is installed
+        try:
+            import anthropic
+        except ImportError:
+            return False
         return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("ANTHROPIC_API_KEY"))
 
     def _convert_tools_to_anthropic_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -886,6 +901,11 @@ class OpenAIClient(BaseAIClient):
         return self._client
 
     def is_available(self) -> bool:
+        # Check if package is installed
+        try:
+            import openai
+        except ImportError:
+            return False
         return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("OPENAI_API_KEY"))
 
     def stream_chat(
@@ -1397,6 +1417,137 @@ class GeminiClient(BaseAIClient):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Cerebras Client (Ultra-fast inference)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CerebrasClient(BaseAIClient):
+    """Cerebras API client - ultra-fast inference using Cerebras Cloud SDK"""
+
+    PROVIDER = "cerebras"
+
+    def __init__(self):
+        self._client = None
+        self._current_api_key = None
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from key manager (supports rotation)"""
+        key = api_key_manager.get_key(self.PROVIDER)
+        if key:
+            return key
+        return os.environ.get("CEREBRAS_API_KEY")
+
+    def _get_client(self):
+        current_key = self.api_key
+        if current_key != self._current_api_key:
+            self._client = None
+            self._current_api_key = current_key
+        if self._client is None and current_key:
+            from cerebras.cloud.sdk import Cerebras
+            self._client = Cerebras(api_key=current_key)
+        return self._client
+
+    def is_available(self) -> bool:
+        try:
+            from cerebras.cloud.sdk import Cerebras
+        except ImportError:
+            return False
+        return api_key_manager.has_available_key(self.PROVIDER) or bool(os.environ.get("CEREBRAS_API_KEY"))
+
+    def stream_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        _retry_count: int = 0
+    ) -> Iterator[StreamChunk]:
+        client = self._get_client()
+        if not client:
+            raise RuntimeError("CEREBRAS_API_KEY not set. Use /setapikey cerebras <your-key>")
+
+        # Get model config for tool support
+        model_config = None
+        for key, config in AVAILABLE_MODELS.items():
+            if config.id == model:
+                model_config = config
+                break
+
+        supports_tools = model_config.supports_tools if model_config else True
+
+        kwargs = {
+            "messages": messages,
+            "model": model,
+            "stream": True,
+            "max_completion_tokens": 8192,
+            "temperature": 0.2,
+            "top_p": 1
+        }
+
+        if tools and supports_tools:
+            kwargs["tools"] = tools
+
+        try:
+            stream = client.chat.completions.create(**kwargs)
+        except Exception as e:
+            error_str = str(e)
+            log_api_error(
+                provider="cerebras",
+                model=model,
+                error=error_str,
+                request_context={"message_count": len(messages), "has_tools": bool(tools)}
+            )
+            if _retry_count < 3 and (is_rate_limit_error(error_str) or is_credit_error(error_str) or is_auth_error(error_str)):
+                rotated, new_key = api_key_manager.report_error(self.PROVIDER, error_str)
+                if rotated and new_key:
+                    log_debug(f"Cerebras: Rotated to new API key, retrying...")
+                    self._client = None
+                    self._current_api_key = None
+                    yield from self.stream_chat(messages, model, tools, _retry_count + 1)
+                    return
+            raise
+
+        current_tool_calls: Dict[int, Dict[str, str]] = {}
+
+        for chunk in stream:
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            if delta.content:
+                yield StreamChunk(content=delta.content)
+
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in current_tool_calls:
+                        current_tool_calls[idx] = {
+                            "id": tc.id or f"call_{idx}",
+                            "name": "",
+                            "arguments": ""
+                        }
+                    if tc.function:
+                        if tc.function.name:
+                            current_tool_calls[idx]["name"] = tc.function.name
+                        if tc.function.arguments:
+                            current_tool_calls[idx]["arguments"] += tc.function.arguments
+
+            if choice.finish_reason:
+                if current_tool_calls:
+                    tool_calls = [
+                        ToolCall(
+                            id=tc["id"],
+                            name=tc["name"],
+                            arguments=tc["arguments"]
+                        )
+                        for tc in current_tool_calls.values()
+                        if tc["name"]
+                    ]
+                    if tool_calls:
+                        yield StreamChunk(tool_calls=tool_calls, finish_reason=choice.finish_reason)
+                else:
+                    yield StreamChunk(finish_reason=choice.finish_reason)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Client Manager
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1411,6 +1562,7 @@ class ClientManager:
             ModelProvider.OPENAI: OpenAIClient(),
             ModelProvider.OLLAMA: OllamaClient(),
             ModelProvider.GOOGLE: GeminiClient(),
+            ModelProvider.CEREBRAS: CerebrasClient(),
         }
 
     def get_client(self, model_key: str) -> BaseAIClient:
@@ -1434,6 +1586,22 @@ class ClientManager:
         if model_key not in AVAILABLE_MODELS:
             raise ValueError(f"Unknown model: {model_key}")
         return AVAILABLE_MODELS[model_key].id
+
+    def get_client_for_provider(self, provider: str) -> Optional[BaseAIClient]:
+        """Get the client for a specific provider name"""
+        provider_map = {
+            "groq": ModelProvider.GROQ,
+            "openrouter": ModelProvider.OPENROUTER,
+            "anthropic": ModelProvider.ANTHROPIC,
+            "openai": ModelProvider.OPENAI,
+            "ollama": ModelProvider.OLLAMA,
+            "google": ModelProvider.GOOGLE,
+            "cerebras": ModelProvider.CEREBRAS,
+        }
+        provider_enum = provider_map.get(provider.lower())
+        if provider_enum:
+            return self._clients.get(provider_enum)
+        return None
 
     def generate_title(self, first_message: str) -> str:
         """Generate a title for a conversation using the utility model"""

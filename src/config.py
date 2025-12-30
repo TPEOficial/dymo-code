@@ -1,7 +1,7 @@
 """
 Configuration and constants for Dymo Code
 Multi-provider AI terminal assistant with support for:
-- Groq, OpenRouter, Claude (Anthropic), OpenAI, Ollama, Google Gemini
+- Groq, OpenRouter, Claude (Anthropic), OpenAI, Ollama, Google Gemini, Cerebras
 """
 
 import os
@@ -21,6 +21,7 @@ class ModelProvider(Enum):
     OPENAI = "openai"
     OLLAMA = "ollama"
     GOOGLE = "google"
+    CEREBRAS = "cerebras"
 
 @dataclass
 class ModelConfig:
@@ -81,6 +82,11 @@ PROVIDER_CONFIGS: Dict[ModelProvider, ProviderConfig] = {
         env_key="GOOGLE_API_KEY",
         base_url="https://generativelanguage.googleapis.com/v1beta",
         description="Google's Gemini models - multimodal AI"
+    ),
+    ModelProvider.CEREBRAS: ProviderConfig(
+        name="Cerebras",
+        env_key="CEREBRAS_API_KEY",
+        description="Ultra-fast inference - world's fastest AI chip"
     ),
 }
 
@@ -248,6 +254,26 @@ AVAILABLE_MODELS: Dict[str, ModelConfig] = {
         description="Lightweight and fast for simple tasks",
         supports_tools=True,
         context_window=1000000,
+        max_output_tokens=8192
+    ),
+
+    # Cerebras Models (Ultra-fast inference)
+    "cerebras-llama": ModelConfig(
+        id="llama-3.3-70b",
+        name="Llama 3.3 70B (Cerebras)",
+        provider=ModelProvider.CEREBRAS,
+        description="Ultra-fast Llama 3.3 70B inference",
+        supports_tools=True,
+        context_window=128000,
+        max_output_tokens=8192
+    ),
+    "cerebras-llama-scout": ModelConfig(
+        id="llama-4-scout-17b-16e-instruct",
+        name="Llama 4 Scout 17B (Cerebras)",
+        provider=ModelProvider.CEREBRAS,
+        description="Llama 4 Scout - efficient and fast",
+        supports_tools=True,
+        context_window=128000,
         max_output_tokens=8192
     ),
 }
