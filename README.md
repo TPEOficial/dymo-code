@@ -91,16 +91,16 @@ $ python run.py
 
 | Provider                       | Models (Assorted)                             | Execution   | Rating  |
 |--------------------------------|-----------------------------------------------|-------------|---------|
-| Anthropic (Coming Soon)        | To be specified shortly                       | API         | None    |
-| Cerebras (Recommended)         | To be specified shortly                       | API         | None    |
-| TPEOficial (Coming Soon)       | To be specified shortly                       | API         | None    |
-| Google (Coming Soon)           | To be specified shortly                       | API         | None    |
-| Groq (Recommended \| Default)  | To be specified shortly                       | API         | None    |
-| Meta (Coming Soon)             | To be specified shortly                       | API         | None    |
-| Ollama (Coming Soon)           | To be specified shortly                       | Local       | None    |
-| OpenAI (Coming Soon)           | To be specified shortly                       | API         | None    |
-| OpenRouter (Coming Soon)       | To be specified shortly                       | API         | None    |
-| Perplexity (Coming Soon)       | To be specified shortly                       | API         | None    |
+| Anthropic (Coming Soon)        | Exec `/models` command                        | API         | None    |
+| Cerebras (Recommended)         | Exec `/models` command                        | API         | None    |
+| TPEOficial (Coming Soon)       | Exec `/models` command                        | API         | None    |
+| Google (Coming Soon)           | Exec `/models` command                        | API         | None    |
+| Groq (Recommended \| Default)  | Exec `/models` command                        | API         | None    |
+| Meta (Coming Soon)             | Exec `/models` command                        | API         | None    |
+| Ollama (Coming Soon)           | Exec `/models` command                        | Local       | None    |
+| OpenAI (Coming Soon)           | Exec `/models` command                        | API         | None    |
+| OpenRouter (Coming Soon)       | Exec `/models` command                        | API         | None    |
+| Perplexity (Coming Soon)       | Exec `/models` command                        | API         | None    |
 
 And coming soon...
 
@@ -114,6 +114,8 @@ And coming soon...
   This system automatically consumes the different API keys and providers that you define in order to avoid consumption limitations from external providers.
 
   You can view your API Keys by running the command `/apikeys`.
+
+  You can configure the logic of the Multi-Key Pool System using the `/keypool` command.
 </details>
 
 <details>

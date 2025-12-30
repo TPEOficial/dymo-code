@@ -1,12 +1,14 @@
 """
 Multi-API Key Manager for Dymo Code
 Handles multiple API keys per provider with automatic rotation on rate limits or credit exhaustion
+Supports two rotation strategies: Sequential and Load Balancer
 """
 
 import os
 import time
+import random
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -21,6 +23,30 @@ class KeyStatus(Enum):
     EXHAUSTED = "exhausted"  # Credits exhausted
     INVALID = "invalid"
     COOLDOWN = "cooldown"  # Temporary cooldown after error
+
+
+class RotationStrategy(Enum):
+    """Strategy for rotating API keys"""
+    SEQUENTIAL = "sequential"      # Use one key until limit, then switch
+    LOAD_BALANCER = "load_balancer"  # Distribute requests across all keys
+
+
+# Callbacks for notifications
+_on_key_rotated: Optional[Callable[[str, str, str], None]] = None  # provider, old_key, new_key
+_on_model_fallback: Optional[Callable[[str, str, str], None]] = None  # provider, old_model, new_model
+_on_provider_exhausted: Optional[Callable[[str], None]] = None  # provider
+
+
+def set_rotation_callbacks(
+    on_key_rotated: Optional[Callable] = None,
+    on_model_fallback: Optional[Callable] = None,
+    on_provider_exhausted: Optional[Callable] = None
+):
+    """Set callbacks for rotation events"""
+    global _on_key_rotated, _on_model_fallback, _on_provider_exhausted
+    _on_key_rotated = on_key_rotated
+    _on_model_fallback = on_model_fallback
+    _on_provider_exhausted = on_provider_exhausted
 
 
 @dataclass
@@ -97,13 +123,15 @@ INVALID_KEY_PATTERNS = [
 class ProviderKeyPool:
     """Manages multiple API keys for a single provider"""
 
-    def __init__(self, provider: str):
+    def __init__(self, provider: str, strategy: RotationStrategy = RotationStrategy.SEQUENTIAL):
         self.provider = provider
         self.keys: List[APIKeyInfo] = []
         self._current_index = 0
         self._lock = threading.Lock()
         self._cooldown_duration = timedelta(seconds=60)  # 1 minute cooldown
         self._rate_limit_cooldown = timedelta(minutes=5)  # 5 minutes for rate limits
+        self._strategy = strategy
+        self._request_counter = 0  # For round-robin in load balancer mode
 
     def add_key(self, key: str, name: Optional[str] = None) -> bool:
         """Add a new API key to the pool with optional name"""
@@ -137,31 +165,49 @@ class ProviderKeyPool:
                     return True
             return False
 
+    def set_strategy(self, strategy: RotationStrategy):
+        """Change the rotation strategy"""
+        with self._lock:
+            self._strategy = strategy
+            log_debug(f"{self.provider}: Changed rotation strategy to {strategy.value}")
+
     def get_current_key(self) -> Optional[str]:
-        """Get the current active API key"""
+        """Get the current active API key based on rotation strategy"""
         with self._lock:
             if not self.keys:
                 return None
 
-            # Try to find an available key starting from current index
-            attempts = len(self.keys)
-            for _ in range(attempts):
-                key_info = self.keys[self._current_index]
-
-                # Reset cooldown if expired
+            # Reset expired cooldowns first
+            for key_info in self.keys:
                 if key_info.cooldown_until and datetime.now() >= key_info.cooldown_until:
                     key_info.status = KeyStatus.ACTIVE
                     key_info.cooldown_until = None
 
-                if key_info.is_available():
-                    key_info.last_used = datetime.now()
-                    key_info.requests_count += 1
-                    return key_info.key
+            # Get available keys
+            available_keys = [k for k in self.keys if k.is_available()]
+            if not available_keys:
+                return None
 
-                # Move to next key
-                self._current_index = (self._current_index + 1) % len(self.keys)
+            if self._strategy == RotationStrategy.LOAD_BALANCER:
+                # Round-robin distribution among available keys
+                self._request_counter += 1
+                key_info = available_keys[self._request_counter % len(available_keys)]
+            else:
+                # Sequential: use current key until it fails
+                key_info = self.keys[self._current_index]
+                if not key_info.is_available():
+                    # Find next available
+                    for i, k in enumerate(self.keys):
+                        if k.is_available():
+                            self._current_index = i
+                            key_info = k
+                            break
+                    else:
+                        return None
 
-            return None
+            key_info.last_used = datetime.now()
+            key_info.requests_count += 1
+            return key_info.key
 
     def report_error(self, key: str, error: str) -> bool:
         """Report an error for a specific key and handle rotation"""
@@ -260,7 +306,11 @@ class ProviderKeyPool:
 class APIKeyManager:
     """
     Global API Key Manager that handles multiple keys per provider
-    with automatic rotation and fallback
+    with automatic rotation and fallback.
+
+    Supports two rotation strategies:
+    - SEQUENTIAL: Use one key until rate limited, then switch to next
+    - LOAD_BALANCER: Distribute requests across all available keys
     """
 
     _instance = None
@@ -290,8 +340,65 @@ class APIKeyManager:
         self._provider_lock = threading.Lock()
         self._initialized = True
 
+        # Default rotation strategy
+        self._default_strategy = RotationStrategy.SEQUENTIAL
+
+        # Model fallback configuration
+        self._model_fallback_enabled = True
+        self._current_fallback_model: Optional[str] = None
+        self._original_model: Optional[str] = None
+        self._fallback_expiry: Optional[datetime] = None
+
+        # Load settings from storage
+        self._load_settings()
+
         # Load keys from storage on init
         self._load_from_storage()
+
+    def _load_settings(self):
+        """Load rotation settings from storage"""
+        try:
+            from .storage import user_config
+            settings = user_config.get_key_pool_settings()
+            if settings:
+                strategy = settings.get("rotation_strategy", "sequential")
+                self._default_strategy = RotationStrategy(strategy)
+                self._model_fallback_enabled = settings.get("model_fallback_enabled", True)
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        """Save rotation settings to storage"""
+        try:
+            from .storage import user_config
+            user_config.set_key_pool_settings({
+                "rotation_strategy": self._default_strategy.value,
+                "model_fallback_enabled": self._model_fallback_enabled
+            })
+        except Exception as e:
+            log_error("Failed to save key pool settings", e)
+
+    def set_rotation_strategy(self, strategy: RotationStrategy):
+        """Set the rotation strategy for all providers"""
+        self._default_strategy = strategy
+        with self._provider_lock:
+            for pool in self._pools.values():
+                pool.set_strategy(strategy)
+        self._save_settings()
+        log_debug(f"Global rotation strategy set to: {strategy.value}")
+
+    def get_rotation_strategy(self) -> RotationStrategy:
+        """Get the current rotation strategy"""
+        return self._default_strategy
+
+    def set_model_fallback_enabled(self, enabled: bool):
+        """Enable or disable automatic model fallback"""
+        self._model_fallback_enabled = enabled
+        self._save_settings()
+
+    def is_model_fallback_enabled(self) -> bool:
+        """Check if model fallback is enabled"""
+        return self._model_fallback_enabled
 
     def _load_from_storage(self):
         """Load API keys from storage (filters out placeholders)"""
@@ -330,7 +437,7 @@ class APIKeyManager:
         provider = provider.lower()
         with self._provider_lock:
             if provider not in self._pools:
-                self._pools[provider] = ProviderKeyPool(provider)
+                self._pools[provider] = ProviderKeyPool(provider, self._default_strategy)
             return self._pools[provider]
 
     def add_key(self, provider: str, key: str, name: Optional[str] = None) -> bool:
@@ -558,3 +665,239 @@ def is_auth_error(error: str) -> bool:
     """Check if an error is an authentication error"""
     error_lower = error.lower()
     return any(p in error_lower for p in INVALID_KEY_PATTERNS)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Model Fallback System
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Fallback model hierarchy per provider (from best to simpler)
+MODEL_FALLBACK_HIERARCHY = {
+    "groq": [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "gemma2-9b-it",
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "gpt-3.5-turbo",
+    ],
+    "anthropic": [
+        "claude-3-5-sonnet-latest",
+        "claude-3-5-haiku-latest",
+        "claude-3-haiku-20240307",
+    ],
+    "google": [
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+    ],
+    "cerebras": [
+        "llama-3.3-70b",
+        "llama-4-scout-17b-16e-instruct",
+    ],
+    "openrouter": [
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4o",
+        "meta-llama/llama-3.1-70b-instruct",
+        "meta-llama/llama-3.1-8b-instruct",
+    ],
+}
+
+
+class ModelFallbackManager:
+    """
+    Manages automatic model fallback when rate limits are hit.
+    Falls back to simpler/smaller models until the rate limit expires.
+    """
+
+    def __init__(self):
+        self._original_model: Optional[str] = None
+        self._current_model: Optional[str] = None
+        self._fallback_provider: Optional[str] = None
+        self._fallback_expiry: Optional[datetime] = None
+        self._fallback_duration = timedelta(minutes=5)  # Default 5 min
+        self._lock = threading.Lock()
+        self._enabled = True
+        # Track active fallbacks per provider
+        self._active_fallbacks: Dict[str, Dict] = {}
+
+    def set_enabled(self, enabled: bool):
+        """Enable or disable the model fallback system"""
+        self._enabled = enabled
+        if not enabled:
+            self.reset_all_fallbacks()
+
+    def is_enabled(self) -> bool:
+        """Check if model fallback is enabled"""
+        return self._enabled
+
+    def get_fallback_model(self, provider: str, current_model: str) -> Optional[str]:
+        """
+        Get a fallback model for the given provider.
+        Returns None if no fallback is available.
+        """
+        provider = provider.lower()
+        hierarchy = MODEL_FALLBACK_HIERARCHY.get(provider, [])
+
+        if not hierarchy:
+            return None
+
+        # Find current model position in hierarchy
+        try:
+            current_index = hierarchy.index(current_model)
+            # Return next model in hierarchy if available
+            if current_index + 1 < len(hierarchy):
+                return hierarchy[current_index + 1]
+        except ValueError:
+            # Current model not in hierarchy, return first fallback
+            if hierarchy:
+                return hierarchy[0]
+
+        return None
+
+    def get_active_fallback(self, provider: str) -> Optional[Tuple[str, str, datetime]]:
+        """
+        Get active fallback for a provider if any.
+        Returns (original_model, fallback_model, expiry) or None.
+        """
+        with self._lock:
+            if self._fallback_provider != provider:
+                return None
+
+            if self._fallback_expiry and datetime.now() >= self._fallback_expiry:
+                # Fallback expired, clear it
+                self._clear_fallback_internal()
+                return None
+
+            if self._original_model and self._current_model:
+                return (self._original_model, self._current_model, self._fallback_expiry)
+
+            return None
+
+    def clear_fallback(self, provider: str = None):
+        """Clear active fallback"""
+        with self._lock:
+            if provider is None or self._fallback_provider == provider:
+                self._clear_fallback_internal()
+
+    def _clear_fallback_internal(self):
+        """Internal method to clear fallback (must hold lock)"""
+        if self._original_model:
+            log_debug(f"Model fallback cleared, restored to: {self._original_model}")
+        self._original_model = None
+        self._current_model = None
+        self._fallback_provider = None
+        self._fallback_expiry = None
+
+    def is_fallback_active(self, provider: str) -> bool:
+        """Check if fallback is currently active for a provider"""
+        return self.get_active_fallback(provider) is not None
+
+    def get_effective_model(self, provider: str, requested_model: str) -> str:
+        """
+        Get the effective model to use, considering active fallbacks.
+        Returns the fallback model if one is active, otherwise the requested model.
+        """
+        fallback = self.get_active_fallback(provider)
+        if fallback and fallback[0] == requested_model:
+            return fallback[1]  # Return fallback model
+        return requested_model
+
+    def get_fallback_info(self) -> Optional[Dict]:
+        """Get information about current fallback state"""
+        with self._lock:
+            if not self._original_model:
+                return None
+
+            remaining = None
+            if self._fallback_expiry:
+                remaining = (self._fallback_expiry - datetime.now()).total_seconds()
+                if remaining < 0:
+                    remaining = 0
+
+            return {
+                "provider": self._fallback_provider,
+                "original_model": self._original_model,
+                "fallback_model": self._current_model,
+                "expiry": self._fallback_expiry.isoformat() if self._fallback_expiry else None,
+                "remaining_seconds": remaining
+            }
+
+    def get_fallback_status(self) -> Dict:
+        """Get complete fallback status including all active fallbacks"""
+        with self._lock:
+            active_fallbacks = {}
+
+            # Clean up expired fallbacks
+            now = datetime.now()
+            expired = []
+            for provider, info in self._active_fallbacks.items():
+                if info.get('expiry') and now >= info['expiry']:
+                    expired.append(provider)
+                else:
+                    active_fallbacks[provider] = {
+                        'original': info.get('original'),
+                        'current': info.get('current'),
+                        'remaining_seconds': (info['expiry'] - now).total_seconds() if info.get('expiry') else None
+                    }
+
+            for p in expired:
+                del self._active_fallbacks[p]
+
+            # Also include the main fallback state
+            if self._fallback_provider and self._original_model:
+                if self._fallback_expiry is None or now < self._fallback_expiry:
+                    active_fallbacks[self._fallback_provider] = {
+                        'original': self._original_model,
+                        'current': self._current_model,
+                        'remaining_seconds': (self._fallback_expiry - now).total_seconds() if self._fallback_expiry else None
+                    }
+
+            return {
+                'enabled': self._enabled,
+                'active_fallbacks': active_fallbacks,
+                'has_active': len(active_fallbacks) > 0
+            }
+
+    def reset_all_fallbacks(self):
+        """Reset all active fallbacks to original models"""
+        with self._lock:
+            self._original_model = None
+            self._current_model = None
+            self._fallback_provider = None
+            self._fallback_expiry = None
+            self._active_fallbacks.clear()
+            log_debug("All model fallbacks have been reset")
+
+    def activate_fallback(self, provider: str, original_model: str, fallback_model: str, duration_minutes: int = 5):
+        """Activate a fallback model for a specified duration"""
+        if not self._enabled:
+            return
+
+        with self._lock:
+            self._original_model = original_model
+            self._current_model = fallback_model
+            self._fallback_provider = provider
+            self._fallback_expiry = datetime.now() + timedelta(minutes=duration_minutes)
+
+            # Also track in active_fallbacks dict
+            self._active_fallbacks[provider] = {
+                'original': original_model,
+                'current': fallback_model,
+                'expiry': self._fallback_expiry
+            }
+
+            log_debug(f"Model fallback activated: {original_model} -> {fallback_model} for {duration_minutes}min")
+
+            # Notify via callback
+            if _on_model_fallback:
+                _on_model_fallback(provider, original_model, fallback_model)
+
+
+# Global model fallback manager instance
+model_fallback_manager = ModelFallbackManager()

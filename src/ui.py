@@ -576,6 +576,24 @@ def display_warning(message: str):
     """Display a warning message"""
     console.print(f"\n[{COLORS['warning']}]⚠[/] {message}\n")
 
+
+def display_key_rotation_notice(provider: str, reason: str = "rate limit"):
+    """Display a notification that API key was rotated"""
+    console.print(f"\n[{COLORS['warning']}]🔄 {provider.upper()} API key rotated ({reason})[/]")
+
+
+def display_model_fallback_notice(provider: str, original_model: str, fallback_model: str):
+    """Display a notification that model was changed due to rate limit"""
+    console.print(f"\n[{COLORS['warning']}]📉 Model fallback: {original_model} → {fallback_model}[/]")
+    console.print(f"[{COLORS['muted']}]   Rate limit hit - using simpler model temporarily[/]")
+
+
+def display_provider_exhausted_notice(provider: str):
+    """Display a notification that all keys for a provider are exhausted"""
+    console.print(f"\n[{COLORS['error']}]⚠ All {provider.upper()} API keys exhausted or rate limited[/]")
+    console.print(f"[{COLORS['muted']}]   Consider adding more keys or waiting for limits to reset[/]")
+
+
 def get_prompt_text() -> Text:
     """Get the input prompt text"""
     prompt_text = Text()

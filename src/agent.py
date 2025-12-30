@@ -20,9 +20,16 @@ from rich.markdown import Markdown
 from .config import COLORS, AVAILABLE_MODELS, DEFAULT_MODEL, get_system_prompt, ModelProvider
 from .clients import ClientManager, StreamChunk, ToolCall, ExecutedTool
 from .lib.prompts import mode_manager
-from .api_key_manager import api_key_manager, is_rate_limit_error, is_credit_error
+from .api_key_manager import (
+    api_key_manager, is_rate_limit_error, is_credit_error,
+    set_rotation_callbacks, model_fallback_manager
+)
 from .tools import TOOL_DEFINITIONS, execute_tool, TOOLS, get_all_tool_definitions
-from .ui import console, display_tool_call, display_tool_result, display_executed_tool, display_code_execution_result, display_info, display_warning
+from .ui import (
+    console, display_tool_call, display_tool_result, display_executed_tool,
+    display_code_execution_result, display_info, display_warning,
+    display_key_rotation_notice, display_model_fallback_notice, display_provider_exhausted_notice
+)
 from .logger import log_error, log_api_error, log_tool_error, log_debug
 from .history import history_manager
 from .name_detector import detect_and_save_name
@@ -202,10 +209,29 @@ class Agent:
         self._init_system_prompt()
         # Start a new conversation
         history_manager.start_new_conversation()
+        # Set up rotation and fallback callbacks for user notifications
+        self._setup_rotation_callbacks()
 
     def set_status_callback(self, callback: StatusCallback):
         """Set a callback function for status updates"""
         self._status_callback = callback
+
+    def _setup_rotation_callbacks(self):
+        """Set up callbacks for API key rotation and model fallback notifications"""
+        def on_key_rotated(provider: str, old_key: str, new_key: str):
+            display_key_rotation_notice(provider, "rate limit or quota exceeded")
+
+        def on_model_fallback(provider: str, old_model: str, new_model: str):
+            display_model_fallback_notice(provider, old_model, new_model)
+
+        def on_provider_exhausted(provider: str):
+            display_provider_exhausted_notice(provider)
+
+        set_rotation_callbacks(
+            on_key_rotated=on_key_rotated,
+            on_model_fallback=on_model_fallback,
+            on_provider_exhausted=on_provider_exhausted
+        )
 
     def _update_status(self, status: str, detail: str = ""):
         """Send a status update if callback is set"""
@@ -815,10 +841,30 @@ class Agent:
                     self.messages.append({"role": "user", "content": user_input})
                     return self.chat(user_input, _retry_count=_retry_count + 1)
 
-            # Check if this is a quota/rate limit error - try to switch provider
+            # Check if this is a quota/rate limit error - try model fallback first, then provider switch
             current_provider = AVAILABLE_MODELS[self.model_key].provider.value
             if is_quota_or_rate_error(error_str):
                 log_debug(f"Quota/rate error detected for {current_provider}")
+
+                # First, try to fallback to a simpler model within the same provider (if enabled)
+                if model_fallback_manager.is_enabled() and _retry_count < 2:
+                    fallback_model_id = model_fallback_manager.get_fallback_model(current_provider, model_id)
+                    if fallback_model_id:
+                        # Find the model key for this fallback model
+                        for key, config in AVAILABLE_MODELS.items():
+                            if config.id == fallback_model_id and config.provider.value == current_provider:
+                                # Activate the fallback with notification
+                                model_fallback_manager.activate_fallback(
+                                    current_provider,
+                                    model_id,
+                                    fallback_model_id,
+                                    duration_minutes=5
+                                )
+                                old_model_key = self.model_key
+                                self.model_key = key
+                                log_debug(f"Model fallback: {model_id} -> {fallback_model_id}")
+                                # Retry with simpler model
+                                return self.chat(user_input, _retry_count=_retry_count + 1)
 
                 # Show friendly message
                 friendly_msg = get_friendly_quota_message(current_provider)

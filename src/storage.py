@@ -414,6 +414,44 @@ class UserConfig:
 
         return info
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Key Pool Settings
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def get_key_pool_settings(self) -> dict:
+        """Get key pool settings (rotation strategy, fallback enabled, etc.)"""
+        return self._config.get("key_pool_settings", {
+            "rotation_strategy": "sequential",
+            "model_fallback_enabled": True
+        })
+
+    def set_key_pool_settings(self, settings: dict):
+        """Save key pool settings"""
+        self._config["key_pool_settings"] = settings
+        self._save_config()
+
+    def get_rotation_strategy(self) -> str:
+        """Get the current rotation strategy"""
+        settings = self.get_key_pool_settings()
+        return settings.get("rotation_strategy", "sequential")
+
+    def set_rotation_strategy(self, strategy: str):
+        """Set the rotation strategy (sequential or load_balancer)"""
+        settings = self.get_key_pool_settings()
+        settings["rotation_strategy"] = strategy
+        self.set_key_pool_settings(settings)
+
+    def is_model_fallback_enabled(self) -> bool:
+        """Check if model fallback is enabled"""
+        settings = self.get_key_pool_settings()
+        return settings.get("model_fallback_enabled", True)
+
+    def set_model_fallback_enabled(self, enabled: bool):
+        """Enable or disable model fallback"""
+        settings = self.get_key_pool_settings()
+        settings["model_fallback_enabled"] = enabled
+        self.set_key_pool_settings(settings)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Global Instance

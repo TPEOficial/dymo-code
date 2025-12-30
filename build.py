@@ -15,7 +15,6 @@ import shutil
 import platform
 from pathlib import Path
 
-
 def get_platform_info():
     """Get current platform information"""
     system = platform.system().lower()
@@ -24,7 +23,6 @@ def get_platform_info():
     if system == "windows": return "windows", "exe", f"dymo-code-windows-{machine}.exe"
     elif system == "darwin": return "macos", "", f"dymo-code-macos-{machine}"
     else: return "linux", "", f"dymo-code-linux-{machine}"
-
 
 def clean_build():
     """Clean build artifacts"""
@@ -46,7 +44,6 @@ def clean_build():
 
     print("Clean complete!")
 
-
 def check_dependencies():
     """Check if required build dependencies are installed"""
     try:
@@ -57,7 +54,6 @@ def check_dependencies():
         print("PyInstaller not found. Installing...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
         return True
-
 
 def build():
     """Build the executable"""
@@ -70,10 +66,10 @@ def build():
     print(f"Building Dymo Code for {platform_name.upper()}")
     print(f"{'='*60}\n")
 
-    # Check dependencies
+    # Check dependencies.
     check_dependencies()
 
-    # Run PyInstaller
+    # Run PyInstaller.
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--clean",
@@ -108,7 +104,6 @@ def build():
         print(f"{'='*60}\n")
     else: print(f"\nWarning: Expected output file not found at {original}")
 
-
 def show_help():
     """Show help message"""
     print(__doc__)
@@ -118,7 +113,6 @@ def show_help():
     print("  - Linux: Produces Unix executable")
     print("\nNote: Cross-compilation is not supported.")
     print("      Build on each target platform separately.")
-
 
 def main():
     args = sys.argv[1:]
@@ -136,6 +130,5 @@ def main():
         return
 
     build()
-
 
 if __name__ == "__main__": main()

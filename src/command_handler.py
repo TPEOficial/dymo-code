@@ -674,6 +674,79 @@ class CommandHandler:
 
             return True, None
 
+        elif name == "keypool":
+            from .api_key_manager import api_key_manager, RotationStrategy, model_fallback_manager
+
+            if not args:
+                # Show status
+                console.print(f"\n[bold {COLORS['secondary']}]Multi-Key Pool Configuration[/]\n")
+
+                # Rotation strategy
+                strategy = user_config.get_rotation_strategy()
+                strategy_display = "Sequential (use until limit)" if strategy == "sequential" else "Load Balancer (round-robin)"
+                console.print(f"  [bold]Rotation Strategy:[/] [{COLORS['accent']}]{strategy_display}[/]")
+
+                # Model fallback
+                fallback_enabled = user_config.is_model_fallback_enabled()
+                fallback_status = f"[{COLORS['success']}]Enabled[/]" if fallback_enabled else f"[{COLORS['muted']}]Disabled[/]"
+                console.print(f"  [bold]Model Fallback:[/] {fallback_status}")
+
+                # Show current fallback state if active
+                if fallback_enabled:
+                    fallback_info = model_fallback_manager.get_fallback_status()
+                    if fallback_info.get('active_fallbacks'):
+                        console.print(f"\n  [{COLORS['warning']}]Active Fallbacks:[/]")
+                        for provider, info in fallback_info['active_fallbacks'].items():
+                            console.print(f"    • {provider}: {info['original']} → {info['current']}")
+
+                console.print(f"\n[{COLORS['muted']}]Commands:[/]")
+                console.print(f"  /keypool sequential   - Use each key until rate limited")
+                console.print(f"  /keypool loadbalancer - Distribute requests across keys")
+                console.print(f"  /keypool fallback on  - Enable model fallback on rate limit")
+                console.print(f"  /keypool fallback off - Disable model fallback")
+                console.print()
+                return True, None
+
+            parts = args.strip().lower().split()
+            subcommand = parts[0]
+
+            if subcommand == "sequential":
+                user_config.set_rotation_strategy("sequential")
+                api_key_manager.set_rotation_strategy(RotationStrategy.SEQUENTIAL)
+                display_success("Rotation strategy set to Sequential (use each key until rate limited)")
+
+            elif subcommand in ["loadbalancer", "load-balancer", "lb"]:
+                user_config.set_rotation_strategy("load_balancer")
+                api_key_manager.set_rotation_strategy(RotationStrategy.LOAD_BALANCER)
+                display_success("Rotation strategy set to Load Balancer (round-robin distribution)")
+
+            elif subcommand == "fallback":
+                if len(parts) < 2:
+                    display_error("Usage: /keypool fallback <on|off>")
+                    return True, None
+
+                if parts[1] in ["on", "enable", "yes", "true"]:
+                    user_config.set_model_fallback_enabled(True)
+                    model_fallback_manager.set_enabled(True)
+                    display_success("Model fallback enabled - will use simpler models when rate limited")
+                elif parts[1] in ["off", "disable", "no", "false"]:
+                    user_config.set_model_fallback_enabled(False)
+                    model_fallback_manager.set_enabled(False)
+                    display_success("Model fallback disabled")
+                else:
+                    display_error("Usage: /keypool fallback <on|off>")
+
+            elif subcommand == "reset":
+                # Reset all fallback states
+                model_fallback_manager.reset_all_fallbacks()
+                display_success("All model fallbacks have been reset to original models")
+
+            else:
+                display_error(f"Unknown keypool command: {subcommand}")
+                console.print(f"[{COLORS['muted']}]Use /keypool to see available options[/]")
+
+            return True, None
+
         elif name == "getapikey":
             from .lib.providers import (
                 API_KEY_PROVIDERS, PROVIDERS, get_provider,

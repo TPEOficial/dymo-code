@@ -249,6 +249,14 @@ COMMANDS: Dict[str, Command] = {
         has_args=True,
         arg_hint="provider"
     ),
+    "keypool": Command(
+        name="keypool",
+        description="Configure Multi-Key Pool System (rotation strategy, fallback)",
+        category=CommandCategory.PROVIDERS,
+        usage="/keypool [sequential|loadbalancer|fallback on|fallback off|status]",
+        has_args=True,
+        arg_hint="option"
+    ),
 
     # History Commands
     "resume": Command(

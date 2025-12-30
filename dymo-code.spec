@@ -23,6 +23,8 @@ except ImportError:
 datas = [
     # Include version.json for update checking
     (str(project_root / 'static-api'), 'static-api'),
+    # Include logo image for documentation
+    (str(project_root / 'docs' / 'images' / 'logo.png'), 'docs/images'),
 ]
 
 # Add certifi certificates if available
@@ -132,5 +134,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(project_root / 'static-api' / 'icon.ico') if (project_root / 'static-api' / 'icon.ico').exists() else None,
+    icon=str(project_root / 'docs' / 'images' / 'icon.ico') if (project_root / 'docs' / 'images' / 'icon.ico').exists() else None,
 )
