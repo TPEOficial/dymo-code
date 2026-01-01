@@ -59,11 +59,9 @@ def is_token_limit_error(error: Exception) -> bool:
     error_str = str(error).lower()
     return any(pattern in error_str for pattern in TOKEN_LIMIT_ERROR_PATTERNS)
 
-
 def is_quota_or_rate_error(error: str) -> bool:
     """Check if an error is a quota exhausted or rate limit error"""
     return is_rate_limit_error(error) or is_credit_error(error)
-
 
 def get_friendly_quota_message(provider: str) -> str:
     """Get user-friendly message for quota errors"""
@@ -71,14 +69,13 @@ def get_friendly_quota_message(provider: str) -> str:
     name = get_provider_name(provider)
     return f"Your {name} credits have been exhausted or rate limited."
 
-
-# Type for status callback
+# Type for status callback.
 StatusCallback = Optional[Callable[[str, str], None]]
 
-# Maximum number of tool call rounds to prevent infinite loops
+# Maximum number of tool call rounds to prevent infinite loops.
 MAX_TOOL_ROUNDS = 3
 
-# Pattern to detect file references with @ symbol
+# Pattern to detect file references with @ symbol.
 # Matches @path/to/file or @./relative/path or @C:\windows\path
 FILE_REFERENCE_PATTERN = re.compile(r'@((?:[A-Za-z]:)?[^\s@]+)')
 
@@ -99,18 +96,16 @@ def process_file_references(text: str) -> Tuple[str, List[Dict[str, str]]]:
         file_path = match.strip()
 
         # Skip if it looks like an email
-        if '@' in file_path or file_path.startswith('http'):
-            continue
+        if '@' in file_path or file_path.startswith('http'): continue
 
         # Resolve the path
         try:
             path = Path(file_path)
-            if not path.is_absolute():
-                path = Path(os.getcwd()) / path
+            if not path.is_absolute(): path = Path(os.getcwd()) / path
 
             if path.exists():
                 if path.is_file():
-                    # Read file content
+                    # Read file content.
                     try:
                         content = path.read_text(encoding='utf-8', errors='replace')
                         file_contents.append({
@@ -125,7 +120,7 @@ def process_file_references(text: str) -> Tuple[str, List[Dict[str, str]]]:
                             "error": f"Could not read file: {str(e)}"
                         })
                 elif path.is_dir():
-                    # List directory contents
+                    # List directory contents.
                     try:
                         items = []
                         for item in path.iterdir():
@@ -157,11 +152,9 @@ def process_file_references(text: str) -> Tuple[str, List[Dict[str, str]]]:
 
     return text, file_contents
 
-
 def format_file_context(file_contents: List[Dict[str, str]]) -> str:
     """Format file contents into context string for the AI"""
-    if not file_contents:
-        return ""
+    if not file_contents: return ""
 
     context_parts = ["\n\n--- Referenced Files/Paths ---"]
 
@@ -169,13 +162,11 @@ def format_file_context(file_contents: List[Dict[str, str]]) -> str:
         path = item.get("path", "unknown")
         item_type = item.get("type", "unknown")
 
-        if "error" in item:
-            context_parts.append(f"\n[{path}] Error: {item['error']}")
+        if "error" in item: context_parts.append(f"\n[{path}] Error: {item['error']}")
         elif item_type == "file":
             content = item.get("content", "")
             # Truncate very long files
-            if len(content) > 10000:
-                content = content[:10000] + "\n... [truncated, file too long]"
+            if len(content) > 10000: content = content[:10000] + "\n... [truncated, file too long]"
             context_parts.append(f"\n[{path}]\n```\n{content}\n```")
         elif item_type == "directory":
             content = item.get("content", "")
@@ -479,10 +470,8 @@ class Agent:
                 if c == '"' and not escape:
                     in_string = not in_string
                     continue
-                if in_string:
-                    continue
-                if c == '{':
-                    depth += 1
+                if in_string: continue
+                if c == '{': depth += 1
                 elif c == '}':
                     depth -= 1
                     if depth == 0:
@@ -506,12 +495,9 @@ class Agent:
     def _parse_tool_args(self, tc) -> dict:
         """Parse tool call arguments with JSON repair for malformed responses"""
         try:
-            if isinstance(tc.arguments, dict):
-                return tc.arguments
-            elif isinstance(tc.arguments, str) and tc.arguments.strip():
-                return json.loads(tc.arguments)
-            else:
-                return {}
+            if isinstance(tc.arguments, dict): return tc.arguments
+            elif isinstance(tc.arguments, str) and tc.arguments.strip(): return json.loads(tc.arguments)
+            else: return {}
         except json.JSONDecodeError:
             # Try to repair the JSON
             try:
@@ -527,7 +513,7 @@ class Agent:
         """Execute a tool without UI - for parallel execution"""
         result = execute_tool(tc.name, args)
 
-        # Check if result indicates an error
+        # Check if result indicates an error.
         has_error = (
             result.startswith("Error") or
             "[exit code:" in result or
@@ -537,8 +523,7 @@ class Agent:
             "is not recognized" in result.lower()
         )
 
-        if has_error:
-            log_tool_error(tc.name, args, result)
+        if has_error: log_tool_error(tc.name, args, result)
 
         return tc, args, result, has_error
 
@@ -546,33 +531,29 @@ class Agent:
         """Execute a single tool call and return results (with UI)"""
         args = self._parse_tool_args(tc)
 
-        # Get detail for status update
+        # Get detail for status update.
         detail = ""
-        if tc.name == "create_folder":
-            detail = args.get("folder_path", args.get("path", ""))
-        elif tc.name == "create_file":
-            detail = args.get("file_path", args.get("path", ""))
-        elif tc.name == "read_file":
-            detail = args.get("file_path", args.get("path", ""))
+        if tc.name == "create_folder": detail = args.get("folder_path", args.get("path", ""))
+        elif tc.name == "create_file": detail = args.get("file_path", args.get("path", ""))
+        elif tc.name == "read_file": detail = args.get("file_path", args.get("path", ""))
         elif tc.name == "run_command":
             cmd = args.get("command", "")
             detail = cmd[:40] + "..." if len(cmd) > 40 else cmd
-        elif tc.name == "list_files_in_dir":
-            detail = args.get("directory", args.get("path", "."))
+        elif tc.name == "list_files_in_dir": detail = args.get("directory", args.get("path", "."))
 
-        # Update status
+        # Update status.
         self._update_status(tc.name, detail)
 
-        # Determine if we should show verbose tool info
+        # Determine if we should show verbose tool info.
         verbose = tc.name not in ["create_folder"]
 
-        # Display and execute
+        # Display and execute.
         console.print()
         display_tool_call(tc.name, args, verbose=verbose)
 
         result = execute_tool(tc.name, args)
 
-        # Check if result indicates an error
+        # Check if result indicates an error.
         has_error = (
             result.startswith("Error") or
             "[exit code:" in result or
@@ -582,12 +563,10 @@ class Agent:
             "is not recognized" in result.lower()
         )
 
-        if has_error:
-            log_tool_error(tc.name, args, result)
+        if has_error: log_tool_error(tc.name, args, result)
 
-        # Only show result panel for verbose operations
-        if verbose or has_error:
-            display_tool_result(result, tc.name)
+        # Only show result panel for verbose operations.
+        if verbose or has_error: display_tool_result(result, tc.name)
 
         return tc, args, result, has_error
 
@@ -602,12 +581,11 @@ class Agent:
         all_results = []
         has_any_error = False
 
-        # For single tool call, use normal sequential execution with UI
+        # For single tool call, use normal sequential execution with UI.
         if len(tool_calls) == 1:
             tc_result = self._execute_single_tool(tool_calls[0], 0)
             all_results.append(tc_result)
-            if tc_result[3]:
-                has_any_error = True
+            if tc_result[3]: has_any_error = True
         else:
             # For multiple tool calls, execute in parallel for speed
             self._update_status("executing", f"{len(tool_calls)} tools in parallel")
@@ -669,10 +647,8 @@ class Agent:
 
         # Add tool results with error context
         for tc, args, result, has_error in all_results:
-            if has_error:
-                result_content = f"[COMMAND FAILED]\n{result}\n\nPlease analyze this error and try an alternative approach."
-            else:
-                result_content = result
+            if has_error: result_content = f"[COMMAND FAILED]\n{result}\n\nPlease analyze this error and try an alternative approach."
+            else: result_content = result
 
             self.messages.append({
                 "role": "tool",
@@ -685,7 +661,7 @@ class Agent:
         allow_more_tools = round_num < MAX_TOOL_ROUNDS
         tools_for_followup = get_all_tool_definitions() if allow_more_tools else None
 
-        # Reset status after tool execution to avoid spinner staying on "Writing file"
+        # Reset status after tool execution to avoid spinner staying on "Writing file".
         self._update_status("thinking", "")
 
         console.print()
@@ -693,9 +669,9 @@ class Agent:
         pending_tool_calls = []
         has_content = False
         live_display = None
-        chunk_count = 0  # Buffer: only update display every N chunks
+        chunk_count = 0 # Buffer: only update display every N chunks.
 
-        # Stream with Live panel for smooth updates
+        # Stream with Live panel for smooth updates.
         for chunk in client.stream_chat(
             messages=self.messages,
             model=model_id,
@@ -716,32 +692,25 @@ class Agent:
 
                 follow_up_response += chunk.content
                 chunk_count += 1
-                # Update the live panel only every 5 chunks to reduce re-renders
-                if live_display and chunk_count % 5 == 0:
-                    live_display.update(
-                        Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
-                    )
+                # Update the live panel only every 5 chunks to reduce re-renders.
+                if live_display and chunk_count % 5 == 0: live_display.update(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
 
             if chunk.tool_calls:
                 pending_tool_calls.extend(chunk.tool_calls)
 
-        # Stop live display and show final panel
-        if live_display:
-            live_display.stop()
-        if has_content and follow_up_response:
-            console.print(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
+        # Stop live display and show final panel.
+        if live_display: live_display.stop()
+        if has_content and follow_up_response: console.print(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
 
         # Check for tool calls in text response
         if not pending_tool_calls and follow_up_response:
             text_tool_calls = self._parse_tool_calls_from_text(follow_up_response)
-            if text_tool_calls:
-                pending_tool_calls.extend(text_tool_calls)
+            if text_tool_calls: pending_tool_calls.extend(text_tool_calls)
 
         # If the model wants to use more tools, process them (for multi-step tasks)
         if pending_tool_calls and allow_more_tools:
             log_debug(f"Processing additional tools (round {round_num + 1})")
-            if follow_up_response:
-                self.messages.append({"role": "assistant", "content": follow_up_response})
+            if follow_up_response: self.messages.append({"role": "assistant", "content": follow_up_response})
 
             return self._process_tool_calls_with_retry(
                 pending_tool_calls,
@@ -754,13 +723,13 @@ class Agent:
 
     def chat(self, user_input: str, _retry_count: int = 0) -> str:
         """Send a message and get a response"""
-        # Only add user message on first attempt (not on retries)
+        # Only add user message on first attempt (not on retries).
         if _retry_count == 0:
-            # Process @ file references
+            # Process @ file references.
             processed_input, file_contents = process_file_references(user_input)
             file_context = format_file_context(file_contents)
 
-            # Show info about referenced files
+            # Show info about referenced files.
             if file_contents:
                 valid_refs = [f for f in file_contents if "error" not in f]
                 error_refs = [f for f in file_contents if "error" in f]
@@ -769,15 +738,14 @@ class Agent:
                 for err_ref in error_refs:
                     display_warning(f"@{err_ref['path']}: {err_ref.get('error', 'unknown error')}")
 
-            # Append file context to user input if any files were referenced
+            # Append file context to user input if any files were referenced.
             final_input = user_input + file_context if file_context else user_input
 
             self.messages.append({"role": "user", "content": final_input})
 
-            # Auto-detect and save user name if mentioned
+            # Auto-detect and save user name if mentioned.
             detected_name = detect_and_save_name(user_input)
-            if detected_name:
-                display_info(f"Nice to meet you, {detected_name}! I'll remember your name.")
+            if detected_name: display_info(f"Nice to meet you, {detected_name}! I'll remember your name.")
 
             # Generate title on first message
             if self.is_first_message:
@@ -794,8 +762,8 @@ class Agent:
             console.print(Panel(f"Error: {error_msg}", border_style=f"{COLORS['error']}", box=ROUNDED))
             return error_msg
 
-        # Compress context if needed (prevents token limit errors)
-        # Get state once and check if compression is needed
+        # Compress context if needed (prevents token limit errors).
+        # Get state once and check if compression is needed.
         context_state = context_manager.get_state(self.messages, self.model_key)
         if context_state.needs_compression:
             display_info(f"Compressing conversation context ({context_state.usage_percent:.0%} used)...")
@@ -812,13 +780,13 @@ class Agent:
         try:
             console.print()
 
-            # Get all tools including MCP tools
+            # Get all tools including MCP tools.
             all_tools = get_all_tool_definitions()
             has_started_streaming = False
             live_display = None
-            chunk_count = 0  # Buffer: only update display every N chunks
+            chunk_count = 0 # Buffer: only update display every N chunks.
 
-            # Update status to generating
+            # Update status to generating.
             self._update_status("generating", "")
 
             for chunk in client.stream_chat(
@@ -874,8 +842,7 @@ class Agent:
                     display_executed_tool(et.type, et.arguments, et.output)
                     # Check for errors in code execution
                     if et.type == "code_interpreter" and et.output:
-                        if "error" in et.output.lower() or "traceback" in et.output.lower():
-                            log_debug(f"Code execution had errors, model should auto-fix")
+                        if "error" in et.output.lower() or "traceback" in et.output.lower(): log_debug(f"Code execution had errors, model should auto-fix")
 
             # Check for tool calls embedded in text response
             if not pending_tool_calls and response_text:
@@ -896,7 +863,7 @@ class Agent:
 
             self.messages.append({"role": "assistant", "content": response_text})
 
-            # Save conversation after each exchange
+            # Save conversation after each exchange.
             self._save_conversation()
 
             return response_text
@@ -923,19 +890,19 @@ class Agent:
                     self.messages.append({"role": "user", "content": user_input})
                     return self.chat(user_input, _retry_count=_retry_count + 1)
 
-            # Check if this is a quota/rate limit error - try model fallback first, then provider switch
+            # Check if this is a quota/rate limit error - try model fallback first, then provider switch.
             current_provider = AVAILABLE_MODELS[self.model_key].provider.value
             if is_quota_or_rate_error(error_str):
                 log_debug(f"Quota/rate error detected for {current_provider}")
 
-                # First, try to fallback to a simpler model within the same provider (if enabled)
+                # First, try to fallback to a simpler model within the same provider (if enabled).
                 if model_fallback_manager.is_enabled() and _retry_count < 2:
                     fallback_model_id = model_fallback_manager.get_fallback_model(current_provider, model_id)
                     if fallback_model_id:
-                        # Find the model key for this fallback model
+                        # Find the model key for this fallback model.
                         for key, config in AVAILABLE_MODELS.items():
                             if config.id == fallback_model_id and config.provider.value == current_provider:
-                                # Activate the fallback with notification
+                                # Activate the fallback with notification.
                                 model_fallback_manager.activate_fallback(
                                     current_provider,
                                     model_id,
@@ -945,7 +912,7 @@ class Agent:
                                 old_model_key = self.model_key
                                 self.model_key = key
                                 log_debug(f"Model fallback: {model_id} -> {fallback_model_id}")
-                                # Retry with simpler model
+                                # Retry with simpler model.
                                 return self.chat(user_input, _retry_count=_retry_count + 1)
 
                 # Show friendly message
