@@ -12,6 +12,7 @@ import urllib.error
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from html.parser import HTMLParser
+import src.utils.bypasses.cloudscraper as cloudscraper
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 
@@ -34,24 +35,19 @@ class HTMLToTextParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         self.current_tag = tag.lower()
-        if self.current_tag in self.skip_tags:
-            self.skip_data = True
-        if self.current_tag in self.block_tags:
-            self.text_parts.append('\n')
+        if self.current_tag in self.skip_tags: self.skip_data = True
+        if self.current_tag in self.block_tags: self.text_parts.append('\n')
 
     def handle_endtag(self, tag):
         tag = tag.lower()
-        if tag in self.skip_tags:
-            self.skip_data = False
-        if tag in self.block_tags:
-            self.text_parts.append('\n')
+        if tag in self.skip_tags: self.skip_data = False
+        if tag in self.block_tags: self.text_parts.append('\n')
         self.current_tag = None
 
     def handle_data(self, data):
         if not self.skip_data:
             text = data.strip()
-            if text:
-                self.text_parts.append(text + ' ')
+            if text: self.text_parts.append(text + ' ')
 
     def get_text(self) -> str:
         text = ''.join(self.text_parts)
@@ -134,13 +130,66 @@ class WebSearchResult:
 
 class WebFetcher:
     """Fetches and parses web pages"""
-
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    MAX_CONTENT_LENGTH = 500000  # 500KB max
-    TIMEOUT = 15  # seconds
+    MAX_CONTENT_LENGTH = 500000 # 500KB max.
+    TIMEOUT = 15 # seconds.
 
     def __init__(self):
         self.ssl_context = create_ssl_context()
+        self._scraper = None
+
+    def _get_scraper(self):
+        if self._scraper is None: self._scraper = cloudscraper.create_scraper()
+        return self._scraper
+
+    def _fetch_with_cloudscraper(self, url: str, max_chars: int) -> WebFetchResult:
+        result = WebFetchResult(url=url, success=False)
+
+        scraper = self._get_scraper()
+        if scraper is None:
+            result.error = "Cloudscraper not available"
+            return result
+
+        try:
+            headers = {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': url
+            }
+
+            response = scraper.get(url, headers=headers, timeout=self.TIMEOUT)
+            result.status_code = response.status_code
+            result.content_type = response.headers.get('Content-Type', '')
+
+            if response.status_code != 200:
+                result.error = f"HTTP Error {response.status_code}"
+                return result
+
+            # Check content type
+            if 'text/html' not in result.content_type and 'text/plain' not in result.content_type:
+                if 'application/json' in result.content_type:
+                    result.content = response.text[:max_chars]
+                    result.success = True
+                    return result
+                else:
+                    result.error = f"Unsupported content type: {result.content_type}"
+                    return result
+
+            html = response.text
+
+            # Extract title.
+            title_match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
+            if title_match: result.title = title_match.group(1).strip()
+
+            # Convert to text.
+            text = html_to_text(html)
+            result.content = text[:max_chars]
+            result.word_count = len(text.split())
+            result.success = True
+
+        except Exception as e: result.error = f"Cloudscraper error: {str(e)}"
+
+        return result
 
     def fetch(self, url: str, max_chars: int = 50000) -> WebFetchResult:
         """
@@ -156,12 +205,12 @@ class WebFetcher:
         result = WebFetchResult(url=url, success=False)
 
         try:
-            # Validate URL
+            # Validate URL.
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
                 result.url = url
 
-            # Create request
+            # Create request.
             request = urllib.request.Request(
                 url,
                 headers={
@@ -182,9 +231,9 @@ class WebFetcher:
                 result.status_code = response.status
                 result.content_type = response.headers.get('Content-Type', '')
 
-                # Check content type
+                # Check content type.
                 if 'text/html' not in result.content_type and 'text/plain' not in result.content_type:
-                    # Try to handle JSON
+                    # Try to handle JSON.
                     if 'application/json' in result.content_type:
                         content = response.read(self.MAX_CONTENT_LENGTH).decode('utf-8', errors='replace')
                         result.content = content[:max_chars]
@@ -194,10 +243,10 @@ class WebFetcher:
                         result.error = f"Unsupported content type: {result.content_type}"
                         return result
 
-                # Read content
+                # Read content.
                 raw_content = response.read(self.MAX_CONTENT_LENGTH)
 
-                # Detect encoding
+                # Detect encoding.
                 encoding = 'utf-8'
                 if 'charset=' in result.content_type:
                     match = re.search(r'charset=([^\s;]+)', result.content_type)
@@ -217,12 +266,11 @@ class WebFetcher:
 
         except urllib.error.HTTPError as e:
             result.status_code = e.code
+            if e.code == 403: return self._fetch_with_cloudscraper(url, max_chars)
             result.error = f"HTTP Error {e.code}: {e.reason}"
 
         except urllib.error.URLError as e: result.error = f"URL Error: {str(e.reason)}"
-
         except TimeoutError: result.error = "Request timed out"
-
         except Exception as e: result.error = f"Error: {str(e)}"
 
         return result
@@ -253,7 +301,6 @@ class WebFetcher:
 
         return results
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Web Search (Using DuckDuckGo HTML)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -270,6 +317,48 @@ class WebSearcher:
 
     def __init__(self):
         self.ssl_context = create_ssl_context()
+        self._scraper = None
+
+    def _get_scraper(self):
+        if self._scraper is None: self._scraper = cloudscraper.create_scraper()
+        return self._scraper
+
+    def _search_with_cloudscraper(self, query: str, num_results: int) -> WebSearchResult:
+        result = WebSearchResult(query=query, success=False)
+
+        scraper = self._get_scraper()
+        if scraper is None:
+            result.error = "Cloudscraper not available"
+            return result
+
+        try:
+            headers = {
+                'Accept': 'text/html',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Referer': self.SEARCH_URL
+            }
+
+            response = scraper.post(
+                self.SEARCH_URL,
+                data={'q': query},
+                headers=headers,
+                timeout=self.TIMEOUT
+            )
+
+            if response.status_code != 200:
+                result.error = f"HTTP Error {response.status_code}"
+                return result
+
+            html = response.text
+            results = self._parse_results(html, num_results)
+            result.results = results
+            result.success = len(results) > 0
+
+            if not results: result.error = "No results found"
+
+        except Exception as e: result.error = f"Cloudscraper search error: {str(e)}"
+
+        return result
 
     def search(self, query: str, num_results: int = 10) -> WebSearchResult:
         """
@@ -285,7 +374,7 @@ class WebSearcher:
         result = WebSearchResult(query=query, success=False)
 
         try:
-            # Prepare search data
+            # Prepare search data.
             data = urllib.parse.urlencode({'q': query}).encode('utf-8')
 
             request = urllib.request.Request(
@@ -305,12 +394,16 @@ class WebSearcher:
             ) as response:
                 html = response.read().decode('utf-8', errors='replace')
 
-            # Parse results
+            # Parse results.
             results = self._parse_results(html, num_results)
             result.results = results
             result.success = len(results) > 0
 
             if not results: result.error = "No results found"
+
+        except urllib.error.HTTPError as e:
+            if e.code == 403: return self._search_with_cloudscraper(query, num_results)
+            result.error = f"Search error: HTTP {e.code}"
 
         except Exception as e: result.error = f"Search error: {str(e)}"
 

@@ -2,8 +2,7 @@
 Terminal UI components for Dymo Code
 """
 
-import os
-import sys
+import os, sys
 from typing import List, Dict, Any
 from rich.console import Console
 from rich.panel import Panel
@@ -183,8 +182,7 @@ def display_tool_call(name: str, args: dict, verbose: bool = True):
             Syntax(args_str, "json", theme="monokai", line_numbers=False),
             style="dim"
         )
-    else:
-        console.print(tool_text)
+    else: console.print(tool_text)
 
 def display_tool_result(result: str, tool_name: str = None):
     """Display a tool result with diff support for file operations"""
@@ -243,7 +241,7 @@ def display_executed_tool(tool_type: str, arguments: str, output: str):
     """Display a tool that was executed by Groq's built-in system (code_interpreter, web_search)"""
     from rich.markdown import Markdown
 
-    # Icon based on tool type
+    # Icon based on tool type.
     icons = {
         "code_interpreter": "🐍",
         "browser_search": "🔍",
@@ -255,7 +253,7 @@ def display_executed_tool(tool_type: str, arguments: str, output: str):
     }
     icon = icons.get(tool_type, "⚙️")
 
-    # Format the header
+    # Format the header.
     header = Text()
     header.append(f"{icon} ", style=f"{COLORS['warning']}")
     header.append("Executed: ", style=f"{COLORS['muted']}")
@@ -263,7 +261,7 @@ def display_executed_tool(tool_type: str, arguments: str, output: str):
 
     console.print(header)
 
-    # Show arguments if present
+    # Show arguments if present.
     if arguments:
         try:
             import json
@@ -275,9 +273,9 @@ def display_executed_tool(tool_type: str, arguments: str, output: str):
             )
         except: console.print(f"  [dim]{arguments}[/dim]")
 
-    # Show output
+    # Show output.
     if output:
-        # Truncate if too long
+        # Truncate if too long.
         if len(output) > 1000: display_output = output[:1000] + "\n... (truncated)"
         else: display_output = output
 
@@ -295,7 +293,7 @@ def display_code_execution_result(code: str, output: str, has_error: bool = Fals
     """Display code execution result with syntax highlighting"""
     from rich.markdown import Markdown
 
-    # Show the code that was executed
+    # Show the code that was executed.
     console.print()
     console.print(
         Panel(
@@ -307,7 +305,7 @@ def display_code_execution_result(code: str, output: str, has_error: bool = Fals
         )
     )
 
-    # Show the output
+    # Show the output.
     border_color = COLORS['error'] if has_error else COLORS['success']
     title = "❌ Execution Error" if has_error else "✓ Output"
 
@@ -324,7 +322,7 @@ def display_code_execution_result(code: str, output: str, has_error: bool = Fals
 
 def display_error(message: str):
     """Display an error message"""
-    console.print()  # Newline before panel to avoid deformation
+    console.print()  # Newline before panel to avoid deformation.
     console.print(Panel(f"Error: {message}", border_style=f"{COLORS['error']}", box=ROUNDED))
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -364,40 +362,40 @@ def display_file_diff(
 
     content = Text()
 
-    # Header
+    # Header.
     content.append("─" * 60 + "\n", style=f"{COLORS['muted']}")
 
     old_line_num = 0
     new_line_num = 0
 
     for line in diff:
-        # File headers
+        # File headers.
         if line.startswith("---"): content.append(line.rstrip() + "\n", style=f"bold {COLORS['error']}")
         elif line.startswith("+++"): content.append(line.rstrip() + "\n", style=f"bold {COLORS['success']}")
-        # Hunk header (@@ -1,5 +1,6 @@)
+        # Hunk header (@@ -1,5 +1,6 @@).
         elif line.startswith("@@"):
             content.append(line.rstrip() + "\n", style=f"bold {COLORS['secondary']}")
-            # Parse line numbers from hunk header
+            # Parse line numbers from hunk header.
             import re
             match = re.match(r"@@ -(\d+)", line)
             if match:
                 old_line_num = int(match.group(1)) - 1
                 new_line_num = old_line_num
-        # Removed line
+        # Removed line.
         elif line.startswith("-"):
             old_line_num += 1
             line_num_str = f"{old_line_num:4d}"
             content.append(f"{line_num_str} ", style=f"dim {COLORS['muted']}")
             content.append("- ", style=f"bold {COLORS['error']}")
             content.append(line[1:].rstrip() + "\n", style=f"{COLORS['error']}")
-        # Added line
+        # Added line.
         elif line.startswith("+"):
             new_line_num += 1
             line_num_str = f"{new_line_num:4d}"
             content.append(f"{line_num_str} ", style=f"dim {COLORS['muted']}")
             content.append("+ ", style=f"bold {COLORS['success']}")
             content.append(line[1:].rstrip() + "\n", style=f"{COLORS['success']}")
-        # Context line
+        # Context line.
         else:
             old_line_num += 1
             new_line_num += 1
@@ -408,7 +406,7 @@ def display_file_diff(
 
     content.append("─" * 60, style=f"{COLORS['muted']}")
 
-    console.print()  # Newline before panel to avoid deformation
+    console.print() # Newline before panel to avoid deformation.
     console.print(Panel(
         content,
         title=f"[bold]📝 {file_path}[/bold]",
@@ -430,7 +428,7 @@ def display_file_creation(file_path: str, content: str, max_lines: int = 30):
 
     text = Text()
 
-    # Header
+    # Header.
     text.append("─" * 60 + "\n", style=f"{COLORS['muted']}")
     text.append(f"+++ b/{file_path}\n", style=f"bold {COLORS['success']}")
     text.append("─" * 60 + "\n", style=f"{COLORS['muted']}")
@@ -445,7 +443,7 @@ def display_file_creation(file_path: str, content: str, max_lines: int = 30):
 
     text.append("─" * 60, style=f"{COLORS['muted']}")
 
-    console.print()  # Newline before panel to avoid deformation
+    console.print() # Newline before panel to avoid deformation.
     console.print(Panel(
         text,
         title=f"[bold]✨ New file: {file_path}[/bold]",
@@ -467,7 +465,7 @@ def display_file_deletion(file_path: str, content: str, max_lines: int = 20):
 
     text = Text()
 
-    # Header
+    # Header.
     text.append("─" * 60 + "\n", style=f"{COLORS['muted']}")
     text.append(f"--- a/{file_path}\n", style=f"bold {COLORS['error']}")
     text.append("─" * 60 + "\n", style=f"{COLORS['muted']}")
@@ -478,12 +476,11 @@ def display_file_deletion(file_path: str, content: str, max_lines: int = 20):
         text.append("- ", style=f"bold {COLORS['error']}")
         text.append(line + "\n", style=f"{COLORS['error']}")
 
-    if total_lines > max_lines:
-        text.append(f"\n... and {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
+    if total_lines > max_lines: text.append(f"\n... and {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
 
     text.append("─" * 60, style=f"{COLORS['muted']}")
 
-    console.print()  # Newline before panel to avoid deformation
+    console.print() # Newline before panel to avoid deformation.
     console.print(Panel(
         text,
         title=f"[bold]🗑️ Deleted: {file_path}[/bold]",
@@ -492,7 +489,6 @@ def display_file_deletion(file_path: str, content: str, max_lines: int = 20):
         box=ROUNDED,
         padding=(0, 1)
     ))
-
 
 def display_file_read(file_path: str, content: str, start_line: int = 1, max_lines: int = 50):
     """
@@ -524,7 +520,7 @@ def display_file_read(file_path: str, content: str, start_line: int = 1, max_lin
 
     if total_lines > max_lines: text.append(f"\n... {total_lines - max_lines} more lines\n", style=f"dim {COLORS['muted']}")
 
-    console.print()  # Newline before panel to avoid deformation
+    console.print() # Newline before panel to avoid deformation.
     console.print(Panel(
         text,
         title=f"[bold]📄 {file_path}[/bold] [{COLORS['muted']}]{total_lines} lines[/]",

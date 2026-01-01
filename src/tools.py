@@ -148,11 +148,9 @@ def read_file(file_path: str = "") -> str:
         )
         return f"Error: {str(e)}"
 
-
 def create_folder(folder_path: str = "") -> str:
     """Create a new folder"""
     if not folder_path: return "Error: folder_path is required"
-
     try:
         os.makedirs(folder_path, exist_ok=True)
         return f"Successfully created folder: {folder_path}"
@@ -211,23 +209,20 @@ def create_file(file_path: str = "", content: str = "") -> str:
         )
         return f"Error: {str(e)}"
 
-
 def run_command(command: str = "", timeout: int = 300) -> str:
     """Execute a shell command with real-time output streaming"""
     if not command:
         return "Error: command is required"
 
-    # Check command permissions before executing
+    # Check command permissions before executing.
     try:
         from .command_permissions import check_and_request_permission
-        if not check_and_request_permission(command):
-            return "Error: Command execution denied by user."
-    except ImportError:
-        pass  # If module not available, allow execution
+        if not check_and_request_permission(command): return "Error: Command execution denied by user."
+    except ImportError: pass # If module not available, allow execution.
 
     from .ui import StreamingConsole
 
-    # Truncate command for title display
+    # Truncate command for title display.
     display_cmd = command[:60] + "..." if len(command) > 60 else command
 
     console_display = StreamingConsole(title=display_cmd)
@@ -239,16 +234,16 @@ def run_command(command: str = "", timeout: int = 300) -> str:
     interrupted = False
 
     try:
-        # Use Popen for streaming output
+        # Use Popen for streaming output.
         process = subprocess.Popen(
             command,
             shell=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Merge stderr into stdout for proper ordering
+            stderr=subprocess.STDOUT, # Merge stderr into stdout for proper ordering.
             text=True,
-            bufsize=1,  # Line buffered
+            bufsize=1, # Line buffered.
             cwd=os.getcwd(),
-            env={**os.environ, 'PYTHONUNBUFFERED': '1'}  # Force unbuffered Python
+            env={**os.environ, 'PYTHONUNBUFFERED': '1'} # Force unbuffered Python.
         )
 
         # Read output line by line as it's produced
@@ -261,26 +256,23 @@ def run_command(command: str = "", timeout: int = 300) -> str:
         exit_code = process.returncode
 
     except KeyboardInterrupt:
-        # User pressed Ctrl+C - terminate the process
+        # User pressed Ctrl+C - terminate the process.
         interrupted = True
         if process:
             try:
-                # Try graceful termination first
+                # Try graceful termination first.
                 process.terminate()
-                try:
-                    process.wait(timeout=2)
+                try: process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
-                    # Force kill if it doesn't respond
+                    # Force kill if it doesn't respond.
                     process.kill()
                     process.wait()
-            except Exception:
-                pass
+            except Exception: pass
         console_display.mark_interrupted()
-        exit_code = -2  # Special code for interrupted
+        exit_code = -2 # Special code for interrupted.
 
     except subprocess.TimeoutExpired:
-        if process:
-            process.kill()
+        if process: process.kill()
         console_display.append("[Command timed out!]")
         exit_code = -1
 
@@ -290,15 +282,12 @@ def run_command(command: str = "", timeout: int = 300) -> str:
 
     console_display.finish(exit_code)
 
-    # Return complete output for tool result
+    # Return complete output for tool result.
     result = ''.join(output_lines)
-    if interrupted:
-        result += "\n[Process interrupted by user]"
-    elif exit_code != 0:
-        result += f"\n[exit code: {exit_code}]"
+    if interrupted: result += "\n[Process interrupted by user]"
+    elif exit_code != 0: result += f"\n[exit code: {exit_code}]"
 
     return result.strip() if result.strip() else "(No output)"
-
 
 def move_path(source: str = "", destination: str = "") -> str:
     """Move a file or folder from source to destination"""
@@ -308,32 +297,29 @@ def move_path(source: str = "", destination: str = "") -> str:
     if not destination: return "Error: destination path is required"
 
     try:
-        # Check if source exists
-        if not os.path.exists(source):
-            return f"Error: Source '{source}' does not exist."
+        # Check if source exists.
+        if not os.path.exists(source): return f"Error: Source '{source}' does not exist."
 
-        # Determine if source is file or directory
+        # Determine if source is file or directory.
         is_dir = os.path.isdir(source)
         item_type = "folder" if is_dir else "file"
 
-        # If destination is a directory, move source into it
+        # If destination is a directory, move source into it.
         if os.path.isdir(destination):
             dest_path = os.path.join(destination, os.path.basename(source))
         else:
             dest_path = destination
-            # Ensure parent directory exists
+            # Ensure parent directory exists.
             parent_dir = os.path.dirname(dest_path)
-            if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+            if parent_dir: os.makedirs(parent_dir, exist_ok=True)
 
-        # Check if destination already exists
-        if os.path.exists(dest_path):
-            return f"Error: Destination '{dest_path}' already exists. Remove it first or choose a different name."
+        # Check if destination already exists.
+        if os.path.exists(dest_path): return f"Error: Destination '{dest_path}' already exists. Remove it first or choose a different name."
 
-        # Perform the move
+        # Perform the move.
         shutil.move(source, dest_path)
 
-        # Track the change
+        # Track the change.
         _last_file_change = FileChange(
             file_path=source,
             change_type="move",
@@ -343,11 +329,8 @@ def move_path(source: str = "", destination: str = "") -> str:
 
         return f"Successfully moved {item_type}: '{source}' → '{dest_path}'"
 
-    except PermissionError:
-        return f"Error: Permission denied to move '{source}'."
-    except Exception as e:
-        return f"Error: {str(e)}"
-
+    except PermissionError: return f"Error: Permission denied to move '{source}'."
+    except Exception as e: return f"Error: {str(e)}"
 
 def delete_path(path: str = "", force: bool = False) -> str:
     """Delete a file or folder (requires user confirmation)"""
@@ -357,40 +340,36 @@ def delete_path(path: str = "", force: bool = False) -> str:
 
     try:
         # Check if path exists
-        if not os.path.exists(path):
-            return f"Error: Path '{path}' does not exist."
+        if not os.path.exists(path): return f"Error: Path '{path}' does not exist."
 
-        # Determine if it's a file or directory
+        # Determine if it's a file or directory.
         is_dir = os.path.isdir(path)
         item_type = "folder" if is_dir else "file"
 
-        # Get size/count info for confirmation message
+        # Get size/count info for confirmation message.
         if is_dir:
-            # Count items in directory
+            # Count items in directory.
             item_count = sum(len(files) + len(dirs) for _, dirs, files in os.walk(path))
             size_info = f"containing {item_count} items"
         else:
             size = os.path.getsize(path)
             size_info = f"({_format_delete_size(size)})"
 
-        # Request permission before deleting
+        # Request permission before deleting.
         if not force:
             try:
                 from .delete_permissions import check_and_request_delete_permission
                 delete_info = f"{item_type.capitalize()}: {path} {size_info}"
-                if not check_and_request_delete_permission(path, delete_info, is_dir):
-                    return f"Delete operation cancelled by user."
+                if not check_and_request_delete_permission(path, delete_info, is_dir): return f"Delete operation cancelled by user."
             except ImportError:
-                # Fallback if permission module not available - deny by default for safety
+                # Fallback if permission module not available - deny by default for safety.
                 return "Error: Delete permission system not available. Operation cancelled for safety."
 
-        # Perform the deletion
-        if is_dir:
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
+        # Perform the deletion.
+        if is_dir: shutil.rmtree(path)
+        else: os.remove(path)
 
-        # Track the change
+        # Track the change.
         _last_file_change = FileChange(
             file_path=path,
             change_type="delete",
@@ -399,20 +378,15 @@ def delete_path(path: str = "", force: bool = False) -> str:
 
         return f"Successfully deleted {item_type}: '{path}'"
 
-    except PermissionError:
-        return f"Error: Permission denied to delete '{path}'."
-    except Exception as e:
-        return f"Error: {str(e)}"
-
+    except PermissionError: return f"Error: Permission denied to delete '{path}'."
+    except Exception as e: return f"Error: {str(e)}"
 
 def _format_delete_size(size: int) -> str:
     """Format file size for delete confirmation"""
     for unit in ["B", "KB", "MB", "GB"]:
-        if size < 1024:
-            return f"{size:.1f}{unit}" if unit != "B" else f"{size}{unit}"
+        if size < 1024: return f"{size:.1f}{unit}" if unit != "B" else f"{size}{unit}"
         size /= 1024
     return f"{size:.1f}TB"
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Search Tools (Glob & Grep)
@@ -423,28 +397,24 @@ def glob_search(pattern: str = "", path: str = ".", recursive: bool = True, max_
     Search for files matching a glob pattern.
     Supports patterns like: **/*.py, src/**/*.ts, *.json, etc.
     """
-    if not pattern:
-        return "Error: pattern is required"
+    if not pattern: return "Error: pattern is required"
 
     try:
         base_path = Path(path).resolve()
-        if not base_path.exists():
-            return f"Error: Path '{path}' does not exist"
+        if not base_path.exists(): return f"Error: Path '{path}' does not exist"
 
         # Build full pattern
         if recursive and "**" not in pattern:
-            # Auto-add recursive search if not specified
+            # Auto-add recursive search if not specified.
             full_pattern = str(base_path / "**" / pattern)
-        else:
-            full_pattern = str(base_path / pattern)
+        else: full_pattern = str(base_path / pattern)
 
-        # Find matching files
+        # Find matching files.
         matches = []
         for match in glob.iglob(full_pattern, recursive=recursive):
             match_path = Path(match)
-            # Skip hidden files/dirs unless pattern explicitly includes them
-            if not pattern.startswith(".") and any(p.startswith(".") for p in match_path.parts):
-                continue
+            # Skip hidden files/dirs unless pattern explicitly includes them.
+            if not pattern.startswith(".") and any(p.startswith(".") for p in match_path.parts): continue
 
             try:
                 rel_path = match_path.relative_to(base_path)
@@ -457,34 +427,27 @@ def glob_search(pattern: str = "", path: str = ".", recursive: bool = True, max_
                     "size": format_size(size) if not is_dir else "-"
                 })
 
-                if len(matches) >= max_results:
-                    break
-            except (OSError, ValueError):
-                continue
+                if len(matches) >= max_results: break
+            except (OSError, ValueError): continue
 
-        if not matches:
-            return f"No files found matching pattern: {pattern}"
+        if not matches: return f"No files found matching pattern: {pattern}"
 
-        # Sort by path
+        # Sort by path.
         matches.sort(key=lambda x: x["path"])
 
-        # Format output
+        # Format output.
         result = f"Found {len(matches)} matches for '{pattern}':\n\n"
         for m in matches:
             icon = "📁" if m["type"] == "directory" else "📄"
             result += f"  {icon} {m['path']}"
-            if m["size"] != "-":
-                result += f" ({m['size']})"
+            if m["size"] != "-": result += f" ({m['size']})"
             result += "\n"
 
-        if len(matches) >= max_results:
-            result += f"\n(Results limited to {max_results}. Use more specific pattern.)"
+        if len(matches) >= max_results: result += f"\n(Results limited to {max_results}. Use more specific pattern.)"
 
         return result.strip()
 
-    except Exception as e:
-        return f"Error searching: {str(e)}"
-
+    except Exception as e: return f"Error searching: {str(e)}"
 
 def grep_search(
     pattern: str = "",
@@ -498,46 +461,37 @@ def grep_search(
     Search for content in files using regex pattern.
     Similar to grep command but returns structured results.
     """
-    if not pattern:
-        return "Error: pattern is required"
+    if not pattern: return "Error: pattern is required"
 
     try:
         base_path = Path(path).resolve()
-        if not base_path.exists():
-            return f"Error: Path '{path}' does not exist"
+        if not base_path.exists(): return f"Error: Path '{path}' does not exist"
 
         # Compile regex
         flags = re.IGNORECASE if ignore_case else 0
-        try:
-            regex = re.compile(pattern, flags)
-        except re.error as e:
-            return f"Error: Invalid regex pattern - {e}"
+        try: regex = re.compile(pattern, flags)
+        except re.error as e: return f"Error: Invalid regex pattern - {e}"
 
         results = []
         files_searched = 0
         files_with_matches = 0
 
-        # Build glob pattern for files
-        if "**" not in file_pattern:
-            glob_pattern = str(base_path / "**" / file_pattern)
-        else:
-            glob_pattern = str(base_path / file_pattern)
+        # Build glob pattern for files.
+        if "**" not in file_pattern: glob_pattern = str(base_path / "**" / file_pattern)
+        else: glob_pattern = str(base_path / file_pattern)
 
         for file_path in glob.iglob(glob_pattern, recursive=True):
             fp = Path(file_path)
 
-            # Skip directories and hidden files
-            if fp.is_dir():
-                continue
-            if any(p.startswith(".") for p in fp.parts):
-                continue
+            # Skip directories and hidden files.
+            if fp.is_dir(): continue
+            if any(p.startswith(".") for p in fp.parts): continue
 
-            # Skip binary files
+            # Skip binary files.
             try:
                 with open(fp, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-            except (OSError, PermissionError):
-                continue
+            except (OSError, PermissionError): continue
 
             files_searched += 1
             lines = content.split("\n")
@@ -547,7 +501,7 @@ def grep_search(
                 if regex.search(line):
                     match_info = {
                         "line_num": i,
-                        "content": line.strip()[:200]  # Limit line length
+                        "content": line.strip()[:200] # Limit line length.
                     }
 
                     # Add context if requested
@@ -559,47 +513,38 @@ def grep_search(
 
                     file_matches.append(match_info)
 
-                    if len(results) + len(file_matches) >= max_results:
-                        break
+                    if len(results) + len(file_matches) >= max_results: break
 
             if file_matches:
                 files_with_matches += 1
-                try:
-                    rel_path = fp.relative_to(base_path)
-                except ValueError:
-                    rel_path = fp
+                try: rel_path = fp.relative_to(base_path)
+                except ValueError: rel_path = fp
 
                 results.append({
                     "file": str(rel_path),
                     "matches": file_matches
                 })
 
-            if len(results) >= max_results:
-                break
+            if len(results) >= max_results: break
 
-        if not results:
-            return f"No matches found for pattern: {pattern}\n(Searched {files_searched} files)"
+        if not results: return f"No matches found for pattern: {pattern}\n(Searched {files_searched} files)"
 
-        # Format output
+        # Format output.
         total_matches = sum(len(r["matches"]) for r in results)
         output = f"Found {total_matches} matches in {files_with_matches} files:\n\n"
 
         for r in results:
             output += f"📄 {r['file']}:\n"
-            for m in r["matches"][:10]:  # Limit matches per file
+            for m in r["matches"][:10]: # Limit matches per file.
                 output += f"   L{m['line_num']}: {m['content']}\n"
-            if len(r["matches"]) > 10:
-                output += f"   ... and {len(r['matches']) - 10} more matches\n"
+            if len(r["matches"]) > 10: output += f"   ... and {len(r['matches']) - 10} more matches\n"
             output += "\n"
 
-        if total_matches >= max_results:
-            output += f"(Results limited to {max_results}. Use more specific pattern.)"
+        if total_matches >= max_results: output += f"(Results limited to {max_results}. Use more specific pattern.)"
 
         return output.strip()
 
-    except Exception as e:
-        return f"Error searching: {str(e)}"
-
+    except Exception as e: return f"Error searching: {str(e)}"
 
 def find_and_replace(
     search_pattern: str = "",
@@ -612,35 +557,29 @@ def find_and_replace(
     """
     Find and replace text in files. Use dry_run=True to preview changes.
     """
-    if not search_pattern:
-        return "Error: search_pattern is required"
+    if not search_pattern: return "Error: search_pattern is required"
 
     try:
         base_path = Path(path).resolve()
-        if not base_path.exists():
-            return f"Error: Path '{path}' does not exist"
+        if not base_path.exists(): return f"Error: Path '{path}' does not exist"
 
         flags = re.IGNORECASE if ignore_case else 0
-        try:
-            regex = re.compile(search_pattern, flags)
-        except re.error as e:
-            return f"Error: Invalid regex pattern - {e}"
+        try: regex = re.compile(search_pattern, flags)
+        except re.error as e: return f"Error: Invalid regex pattern - {e}"
 
         changes = []
         glob_pattern = str(base_path / "**" / file_pattern)
 
         for file_path in glob.iglob(glob_pattern, recursive=True):
             fp = Path(file_path)
-            if fp.is_dir() or any(p.startswith(".") for p in fp.parts):
-                continue
+            if fp.is_dir() or any(p.startswith(".") for p in fp.parts): continue
 
             try:
                 with open(fp, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 matches = list(regex.finditer(content))
-                if not matches:
-                    continue
+                if not matches: continue
 
                 new_content = regex.sub(replace_with, content)
                 rel_path = str(fp.relative_to(base_path))
@@ -655,27 +594,21 @@ def find_and_replace(
                     with open(fp, "w", encoding="utf-8") as f:
                         f.write(new_content)
 
-            except (OSError, PermissionError, UnicodeDecodeError):
-                continue
+            except (OSError, PermissionError, UnicodeDecodeError): continue
 
-        if not changes:
-            return f"No matches found for pattern: {search_pattern}"
+        if not changes: return f"No matches found for pattern: {search_pattern}"
 
         total = sum(c["count"] for c in changes)
         action = "Would replace" if dry_run else "Replaced"
 
         output = f"{action} {total} occurrences in {len(changes)} files:\n\n"
-        for c in changes:
-            output += f"  📄 {c['file']}: {c['count']} matches\n"
+        for c in changes: output += f"  📄 {c['file']}: {c['count']} matches\n"
 
-        if dry_run:
-            output += f"\n⚠️  This is a dry run. Set dry_run=False to apply changes."
+        if dry_run: output += f"\n⚠️  This is a dry run. Set dry_run=False to apply changes."
 
         return output.strip()
 
-    except Exception as e:
-        return f"Error: {str(e)}"
-
+    except Exception as e: return f"Error: {str(e)}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tool Registry

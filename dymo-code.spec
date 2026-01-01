@@ -97,6 +97,22 @@ hiddenimports = [
     'src.context_manager',
     'src.utils',
     'src.utils.basics',
+    # Cloudscraper bypass modules
+    'src.utils.bypasses',
+    'src.utils.bypasses.cloudscraper',
+    'src.utils.bypasses.cloudscraper.main',
+    'src.utils.bypasses.cloudscraper.exceptions',
+    'src.utils.bypasses.cloudscraper.user_agent',
+    'src.utils.bypasses.cloudscraper.interpreters',
+    'src.utils.bypasses.cloudscraper.captcha',
+    # Cloudscraper dependencies
+    'requests',
+    'requests.adapters',
+    'requests.sessions',
+    'requests_toolbelt',
+    'requests_toolbelt.utils',
+    'requests_toolbelt.utils.dump',
+    'brotli',
 ]
 
 a = Analysis(
