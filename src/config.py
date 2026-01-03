@@ -378,6 +378,13 @@ Example: "Add missing algorithms from folder A to file B"
 ## TASK DIVISION (spawn_agents)
 For 3+ independent subtasks, use spawn_agents to parallelize work.
 
+## TOOL USAGE - CRITICAL
+- ONLY use tools that are explicitly provided to you
+- NEVER invent or guess tool names - use EXACT names from the tool list
+- Available tools: list_files_in_dir, read_file, create_file, create_folder, run_command, move_path, delete_path, glob_search, grep_search, find_and_replace, web_search, fetch_url, search_and_summarize, spawn_agents, check_agent_tasks
+- If you need functionality not available, use run_command with appropriate shell commands
+- DO NOT add prefixes like "functions/", "tools.", or "system." to tool names
+
 ## RESPONSES
 - Be concise: "Created file.py" - done
 - Don't repeat file contents unless asked

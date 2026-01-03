@@ -1014,8 +1014,17 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
     """Execute a tool by name with given arguments"""
     # Strip common prefixes that some models add incorrectly
     # e.g., "repo_browser.list_files_in_dir" -> "list_files_in_dir"
+    # e.g., "functions/create_file" -> "create_file"
     original_name = name
-    prefixes_to_strip = ["repo_browser.", "functions.", "tools.", "file_ops.", "system."]
+
+    # Handle both dot (.) and slash (/) separators
+    prefixes_to_strip = [
+        "repo_browser.", "repo_browser/",
+        "functions.", "functions/",
+        "tools.", "tools/",
+        "file_ops.", "file_ops/",
+        "system.", "system/"
+    ]
     for prefix in prefixes_to_strip:
         if name.startswith(prefix):
             name = name[len(prefix):]

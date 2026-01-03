@@ -180,12 +180,12 @@ def format_file_context(file_contents: List[Dict[str, str]]) -> str:
 
 # Patterns to detect tool calls in text responses
 TOOL_CALL_PATTERNS = [
-    # Pattern: <function/name>{"arg": "value"}</function
-    r'<function/(\w+)>\s*(\{[^}]*\})\s*</function',
-    # Pattern: <function name="name">{"arg": "value"}</function>
-    r'<function\s+name="(\w+)">\s*(\{[^}]*\})\s*</function>',
-    # Pattern: ```json\n{"name": "func", "arguments": {...}}```
-    r'```json\s*\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*```',
+    # Pattern: <function/name>{"arg": "value"}</function (also handles <functions/name>)
+    r'<functions?/([\w/]+)>\s*(\{[^}]*\})\s*</function',
+    # Pattern: <function name="name">{"arg": "value"}</function> (also handles prefixed names)
+    r'<function\s+name="([\w./]+)">\s*(\{[^}]*\})\s*</function>',
+    # Pattern: ```json\n{"name": "func", "arguments": {...}}``` (also handles prefixed names)
+    r'```json\s*\{\s*"name"\s*:\s*"([\w./]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*```',
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -405,18 +405,54 @@ class Agent:
         """Save the current conversation state"""
         history_manager.update_conversation(self.messages)
 
+    def _normalize_tool_name(self, name: str) -> str:
+        """
+        Normalize a tool name by stripping common prefixes.
+        Some models add prefixes like 'functions/' or 'tools.' to tool names.
+        """
+        prefixes_to_strip = [
+            "repo_browser.", "repo_browser/",
+            "functions.", "functions/",
+            "tools.", "tools/",
+            "file_ops.", "file_ops/",
+            "system.", "system/"
+        ]
+        for prefix in prefixes_to_strip:
+            if name.startswith(prefix):
+                return name[len(prefix):]
+        return name
+
     def _filter_valid_tool_calls(self, tool_calls: List[Any]) -> List[Any]:
         """
         Filter out tool calls for unknown/invalid tools.
         Some models (especially Llama) may hallucinate tool names like 'commentary'.
+        Also normalizes tool names by stripping common prefixes (functions/, tools., etc.)
         """
         valid_calls = []
+        invalid_tools = []
+
         for tc in tool_calls:
             tool_name = tc.name if hasattr(tc, 'name') else tc.get('name', '')
-            if tool_name in TOOLS:
+            # Normalize the tool name by stripping prefixes
+            normalized_name = self._normalize_tool_name(tool_name)
+
+            if normalized_name in TOOLS:
+                # Update the tool call with the normalized name
+                if hasattr(tc, 'name'):
+                    tc.name = normalized_name
+                elif isinstance(tc, dict):
+                    tc['name'] = normalized_name
                 valid_calls.append(tc)
             else:
+                invalid_tools.append(tool_name)
                 log_debug(f"Ignoring unknown tool call: {tool_name}")
+
+        # If invalid tools were detected, show warning
+        if invalid_tools:
+            display_warning(f"Ignored invalid tool(s): {', '.join(invalid_tools)}")
+            available = list(TOOLS.keys())[:15]  # Show first 15 tools
+            log_debug(f"Available tools: {available}")
+
         return valid_calls
 
     def _parse_tool_calls_from_text(self, text: str) -> List[ToolCall]:
@@ -433,15 +469,16 @@ class Agent:
                 func_name = match[0]
                 args_str = match[1]
 
-                # Validate that it's a known tool
-                if func_name in TOOLS:
+                # Normalize and validate that it's a known tool
+                normalized_name = self._normalize_tool_name(func_name)
+                if normalized_name in TOOLS:
                     call_id += 1
                     tool_calls.append(ToolCall(
                         id=f"text_call_{call_id}",
-                        name=func_name,
+                        name=normalized_name,
                         arguments=args_str
                     ))
-                    log_debug(f"Parsed tool call from text: {func_name}")
+                    log_debug(f"Parsed tool call from text: {normalized_name}")
 
         return tool_calls
 
