@@ -63,9 +63,31 @@ for i in $(seq 1 $max_retries); do
 done
 
 if [ "$success" = false ]; then
+    echo ""
     echo "Failed to download after $max_retries attempts."
-    echo "Please download manually from:"
-    echo "$DOWNLOAD_URL"
+    echo ""
+    echo "Manual installation instructions:"
+    echo "  1. Save the file to: $OUTPUT_FILE"
+    echo "  2. File name must be: dymo-code"
+    echo ""
+    echo "Press Enter to open the download page in your browser..."
+    read -r
+
+    # Open browser based on OS
+    if command -v xdg-open > /dev/null; then
+        xdg-open "$DOWNLOAD_URL"
+    elif command -v open > /dev/null; then
+        open "$DOWNLOAD_URL"
+    else
+        echo "Could not open browser. Please visit:"
+        echo "$DOWNLOAD_URL"
+    fi
+
+    echo ""
+    echo "After downloading, move the file to:"
+    echo "$OUTPUT_FILE"
+    echo ""
+    echo "Then run: chmod +x $OUTPUT_FILE"
     exit 1
 fi
 

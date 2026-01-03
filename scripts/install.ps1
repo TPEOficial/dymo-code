@@ -46,9 +46,21 @@ for ($i = 1; $i -le $maxRetries; $i++) {
 }
 
 if (-not $success) {
+    Write-Host ""
     Write-Host "Failed to download after $maxRetries attempts." -ForegroundColor Red
-    Write-Host "Please download manually from:" -ForegroundColor Yellow
-    Write-Host $DownloadUrl -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Manual installation instructions:" -ForegroundColor Yellow
+    Write-Host "  1. Save the file to: " -NoNewline -ForegroundColor White
+    Write-Host $OutputFile -ForegroundColor Cyan
+    Write-Host "  2. File name must be: " -NoNewline -ForegroundColor White
+    Write-Host "dymo-code.exe" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Press Enter to open the download page in your browser..." -ForegroundColor Gray
+    $null = Read-Host
+    Start-Process $DownloadUrl
+    Write-Host ""
+    Write-Host "After downloading, move the file to:" -ForegroundColor Yellow
+    Write-Host $OutputFile -ForegroundColor Cyan
     exit 1
 }
 
