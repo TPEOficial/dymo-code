@@ -73,8 +73,10 @@ def get_friendly_quota_message(provider: str) -> str:
 # Type for status callback.
 StatusCallback = Optional[Callable[[str, str], None]]
 
-# Maximum number of tool call rounds to prevent infinite loops.
-MAX_TOOL_ROUNDS = 3
+# Maximum number of tool call rounds.
+# High limit to allow complex multi-step tasks to complete.
+# The model will naturally stop when task is done.
+MAX_TOOL_ROUNDS = 50
 
 # Pattern to detect file references with @ symbol.
 # Matches @path/to/file or @./relative/path or @C:\windows\path
@@ -716,16 +718,39 @@ class Agent:
                 pending_tool_calls.extend(text_tool_calls)
 
         # If the model wants to use more tools, process them (for multi-step tasks)
-        if pending_tool_calls and allow_more_tools:
-            log_debug(f"Processing additional tools (round {round_num + 1})")
-            if follow_up_response: self.messages.append({"role": "assistant", "content": follow_up_response})
+        if pending_tool_calls:
+            if allow_more_tools:
+                log_debug(f"Processing additional tools (round {round_num + 1})")
+                if follow_up_response: self.messages.append({"role": "assistant", "content": follow_up_response})
 
-            return self._process_tool_calls_with_retry(
-                pending_tool_calls,
-                client,
-                model_id,
-                round_num + 1
-            )
+                return self._process_tool_calls_with_retry(
+                    pending_tool_calls,
+                    client,
+                    model_id,
+                    round_num + 1
+                )
+            else:
+                # Reached MAX_TOOL_ROUNDS - ask user if they want to continue
+                console.print()
+                console.print(f"[{COLORS['warning']}]Reached {MAX_TOOL_ROUNDS} tool rounds. The task may not be complete.[/]")
+                console.print(f"[{COLORS['muted']}]Continue with {MAX_TOOL_ROUNDS} more rounds? (y/n): [/]", end="")
+
+                try:
+                    user_choice = input().strip().lower()
+                    if user_choice in ['y', 'yes', 's', 'si', 'sí']:
+                        log_debug(f"User approved continuation for {MAX_TOOL_ROUNDS} more rounds")
+                        if follow_up_response: self.messages.append({"role": "assistant", "content": follow_up_response})
+
+                        return self._process_tool_calls_with_retry(
+                            pending_tool_calls,
+                            client,
+                            model_id,
+                            round_num=1  # Reset counter
+                        )
+                    else:
+                        console.print(f"[{COLORS['muted']}]Stopping tool execution.[/]")
+                except (EOFError, KeyboardInterrupt):
+                    console.print(f"\n[{COLORS['muted']}]Stopping tool execution.[/]")
 
         return follow_up_response
 
