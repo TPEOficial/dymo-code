@@ -266,6 +266,14 @@ COMMANDS: Dict[str, Command] = {
         arg_hint="on|off|status",
         aliases=["url-verify"]
     ),
+    "domain": Command(
+        name="domain",
+        description="Manage blocked/allowed domains for URL verification",
+        category=CommandCategory.PROVIDERS,
+        usage="/domain [list|allow <domain>|block <domain>|reset <domain>]",
+        has_args=True,
+        arg_hint="action"
+    ),
 
     # History Commands
     "resume": Command(

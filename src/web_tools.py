@@ -106,7 +106,10 @@ class URLVerifier:
     def __init__(self):
         self._dymo = None
         self._enabled = True  # Enabled by default if API key is available
+        self._rejected_domains = set()  # Cache of domains user rejected
+        self._accepted_domains = set()  # Cache of domains user accepted (proceed at risk)
         self._load_settings()
+        self._load_domain_decisions()
 
     def _load_settings(self):
         """Load settings from storage"""
@@ -123,6 +126,33 @@ class URLVerifier:
             user_config.set("url_verification_enabled", self._enabled)
         except Exception:
             pass
+
+    def _load_domain_decisions(self):
+        """Load domain decisions from storage"""
+        try:
+            from .storage import user_config
+            rejected = user_config.get("rejected_domains", [])
+            accepted = user_config.get("accepted_domains", [])
+            self._rejected_domains = set(rejected)
+            self._accepted_domains = set(accepted)
+        except Exception:
+            pass
+
+    def _save_domain_decisions(self):
+        """Save domain decisions to storage"""
+        try:
+            from .storage import user_config
+            user_config.set("rejected_domains", list(self._rejected_domains))
+            user_config.set("accepted_domains", list(self._accepted_domains))
+        except Exception:
+            pass
+
+    def _normalize_domain(self, domain: str) -> str:
+        """Normalize domain by removing www. prefix and converting to lowercase"""
+        domain = domain.lower().strip()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
 
     def _get_client(self):
         """Get Dymo API client (lazy initialization)"""
@@ -146,36 +176,117 @@ class URLVerifier:
         return self._enabled
 
     def is_available(self) -> bool:
-        """Check if Dymo API verification is available"""
-        return DYMO_AVAILABLE and self._get_client() is not None
+        """Check if Dymo API verification is available (has API key)"""
+        try:
+            from .api_key_manager import api_key_manager
+            return api_key_manager.get_key("dymo") is not None
+        except Exception:
+            return False
+
+    def is_domain_rejected(self, domain: str) -> bool:
+        """Check if user already rejected this domain"""
+        return self._normalize_domain(domain) in self._rejected_domains
+
+    def add_rejected_domain(self, domain: str):
+        """Add domain to rejected list and persist"""
+        self._rejected_domains.add(self._normalize_domain(domain))
+        self._save_domain_decisions()
+
+    def is_domain_accepted(self, domain: str) -> bool:
+        """Check if user already accepted this domain (proceed at risk)"""
+        return self._normalize_domain(domain) in self._accepted_domains
+
+    def add_accepted_domain(self, domain: str):
+        """Add domain to accepted list and persist"""
+        self._accepted_domains.add(self._normalize_domain(domain))
+        self._save_domain_decisions()
+
+    def remove_domain_decision(self, domain: str) -> bool:
+        """Remove domain from both lists (reset decision). Returns True if found."""
+        normalized = self._normalize_domain(domain)
+        found = False
+        if normalized in self._rejected_domains:
+            self._rejected_domains.remove(normalized)
+            found = True
+        if normalized in self._accepted_domains:
+            self._accepted_domains.remove(normalized)
+            found = True
+        if found:
+            self._save_domain_decisions()
+        return found
+
+    def allow_domain(self, domain: str):
+        """Explicitly allow a domain (move from rejected to accepted)"""
+        normalized = self._normalize_domain(domain)
+        if normalized in self._rejected_domains:
+            self._rejected_domains.remove(normalized)
+        self._accepted_domains.add(normalized)
+        self._save_domain_decisions()
+
+    def block_domain(self, domain: str):
+        """Explicitly block a domain (move from accepted to rejected)"""
+        normalized = self._normalize_domain(domain)
+        if normalized in self._accepted_domains:
+            self._accepted_domains.remove(normalized)
+        self._rejected_domains.add(normalized)
+        self._save_domain_decisions()
+
+    def get_rejected_domains(self) -> list:
+        """Get list of rejected domains"""
+        return sorted(self._rejected_domains)
+
+    def get_accepted_domains(self) -> list:
+        """Get list of accepted domains"""
+        return sorted(self._accepted_domains)
 
     def verify_url(self, url: str) -> dict:
         """
         Verify a URL using Dymo API.
         Returns dict with 'safe' (bool), 'reason' (str), 'details' (dict)
         """
-        client = self._get_client()
-        if not client or not self._enabled:
+        if not self._enabled:
             return {"safe": True, "reason": "verification_disabled", "details": {}}
 
         try:
+            from .api_key_manager import api_key_manager
+            import requests
+
+            api_key = api_key_manager.get_key("dymo")
+            if not api_key:
+                return {"safe": True, "reason": "no_api_key", "details": {}}
+
             # Extract domain from URL
             parsed = urllib.parse.urlparse(url)
             domain = parsed.netloc
 
-            result = client.is_valid_data_raw({
-                "url": url,
-                "domain": domain
-            })
+            # Use direct API call (more reliable than SDK)
+            response = requests.post(
+                'https://api.tpeoficial.com/v1/private/secure/verify',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                },
+                json={'url': url, 'domain': domain},
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                return {"safe": True, "reason": f"api_error_{response.status_code}", "details": {}}
+
+            result = response.json()
 
             # Analyze response
+            url_data = result.get("url", {})
+            domain_data = result.get("domain", {})
+
             is_safe = True
             reason = "verified"
 
-            if result.get("fraud"):
+            # Check for fraud
+            if url_data.get("fraud") or domain_data.get("fraud"):
                 is_safe = False
                 reason = "fraud_detected"
-            elif not result.get("valid"):
+            elif not url_data.get("valid"):
                 is_safe = False
                 reason = "invalid_url"
 
@@ -244,6 +355,99 @@ class WebFetcher:
     def _get_scraper(self):
         if self._scraper is None: self._scraper = cloudscraper.create_scraper()
         return self._scraper
+
+    def _confirm_fraudulent_url(self, url: str, verification: dict, domain: str = None) -> bool:
+        """
+        Show visual warning for fraudulent URL and ask user for confirmation.
+        Returns True if user wants to continue, False otherwise.
+        """
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.text import Text
+            from rich.box import HEAVY
+
+            console = Console()
+
+            # Pause spinner and clear line to avoid output conflicts
+            try:
+                from .terminal_ui import pause_spinner
+                pause_spinner()
+            except Exception:
+                pass
+            import sys
+            sys.stdout.write("\r\033[K")  # Clear current line
+            sys.stdout.flush()
+
+            details = verification.get("details", {})
+            url_data = details.get("url", {})
+            domain_data = details.get("domain", {})
+
+            # Extract domain if not provided
+            if not domain:
+                parsed = urllib.parse.urlparse(url)
+                domain = parsed.netloc.lower()
+                if domain.startswith("www."):
+                    domain = domain[4:]
+
+            # Build warning message
+            warning = Text()
+            warning.append("🚨 FRAUDULENT SITE DETECTED 🚨\n\n", style="bold red")
+            warning.append(f"URL: ", style="dim")
+            warning.append(f"{url}\n", style="bold white")
+            warning.append(f"Domain: ", style="dim")
+            warning.append(f"{domain}\n\n", style="bold white")
+
+            warning.append("Security Analysis:\n", style="bold yellow")
+            warning.append(f"  • URL Valid: ", style="dim")
+            warning.append(f"{'Yes' if url_data.get('valid') else 'No'}\n", style="green" if url_data.get('valid') else "red")
+            warning.append(f"  • URL Fraud: ", style="dim")
+            warning.append(f"{'YES' if url_data.get('fraud') else 'No'}\n", style="bold red" if url_data.get('fraud') else "green")
+            warning.append(f"  • Domain Fraud: ", style="dim")
+            warning.append(f"{'YES' if domain_data.get('fraud') else 'No'}\n", style="bold red" if domain_data.get('fraud') else "green")
+
+            warning.append("\nThis site may steal your data or infect your device.\n", style="bold yellow")
+            warning.append("Recommendation: DO NOT CONTINUE\n\n", style="bold red")
+            warning.append(f"To change this decision later, use:\n", style="dim")
+            warning.append(f"  /domain allow {domain}\n", style="cyan")
+            warning.append(f"  /domain block {domain}\n", style="cyan")
+
+            console.print()
+            console.print(Panel(
+                warning,
+                title="[bold red]SECURITY WARNING[/]",
+                border_style="red",
+                box=HEAVY,
+                padding=(1, 2)
+            ))
+
+            # Ask for confirmation
+            console.print()
+            console.print("[bold yellow]Do you want to continue anyway? (not recommended)[/]")
+            console.print("[dim]Type 'yes' to continue or press Enter to cancel:[/] ", end="")
+
+            try:
+                response = input().strip().lower()
+                # Resume spinner
+                try:
+                    from .terminal_ui import resume_spinner
+                    resume_spinner()
+                except Exception:
+                    pass
+
+                if response in ('yes', 'y'):
+                    console.print("[yellow]Proceeding at your own risk...[/]\n")
+                    return True
+                else:
+                    console.print("[green]URL access cancelled for your safety.[/]\n")
+                    return False
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[green]URL access cancelled.[/]\n")
+                return False
+
+        except Exception:
+            # If Rich is not available or any error, default to blocking
+            return False
 
     def _fetch_with_cloudscraper(self, url: str, max_chars: int) -> WebFetchResult:
         result = WebFetchResult(url=url, success=False)
@@ -316,10 +520,37 @@ class WebFetcher:
 
             # Verify URL with Dymo API if enabled
             if verify_url and _url_verifier.is_available():
-                verification = _url_verifier.verify_url(url)
-                if not verification["safe"]:
-                    result.error = f"URL blocked: {verification['reason']}"
+                # Extract and normalize domain for cache check
+                parsed = urllib.parse.urlparse(url)
+                domain = _url_verifier._normalize_domain(parsed.netloc)
+
+                # Check if user already rejected this domain
+                if _url_verifier.is_domain_rejected(domain):
+                    result.error = (
+                        f"ACCESS DENIED: Domain '{domain}' was previously blocked. "
+                        f"Use '/domain allow {domain}' to unblock. DO NOT retry."
+                    )
                     return result
+
+                # Check if user already accepted this domain (skip verification)
+                if _url_verifier.is_domain_accepted(domain):
+                    pass  # User already accepted risk, proceed without asking
+
+                else:
+                    verification = _url_verifier.verify_url(url)
+                    if not verification["safe"]:
+                        # Show visual warning and ask user for confirmation
+                        if self._confirm_fraudulent_url(url, verification, domain):
+                            # User accepted, cache the decision
+                            _url_verifier.add_accepted_domain(domain)
+                        else:
+                            # User rejected, cache the decision
+                            _url_verifier.add_rejected_domain(domain)
+                            result.error = (
+                                f"ACCESS DENIED: Fraudulent site '{domain}' blocked. "
+                                f"Use '/domain allow {domain}' to unblock if needed. DO NOT retry."
+                            )
+                            return result
 
             # Create request.
             request = urllib.request.Request(

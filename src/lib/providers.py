@@ -72,7 +72,7 @@ PROVIDERS: Dict[str, ProviderInfo] = {
         id="dymo",
         name="Dymo API",
         description="URL/Domain verification and fraud detection",
-        api_key_url="https://tpeoficial.com/p/dymo-api",
+        api_key_url="https://tpe.li/new-api-key",
         env_key="DYMO_API_KEY",
         provides_ai=False
     )

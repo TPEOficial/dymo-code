@@ -973,6 +973,12 @@ class Agent:
                     display_warning(f"API error detected. Retrying... (attempt {_retry_count + 1}/3)")
                     return self.chat(user_input, _retry_count=_retry_count + 1)
 
+                # Handle parsing errors from GPT-OSS and similar models
+                if "parsing failed" in error_str.lower() or "could not be parsed" in error_str.lower():
+                    log_debug(f"Model parsing error detected, retrying...")
+                    display_warning(f"Model output parsing error. Retrying... (attempt {_retry_count + 1}/3)")
+                    return self.chat(user_input, _retry_count=_retry_count + 1)
+
                 # For other transient errors, simple retry with backoff
                 if any(err_type in error_str.lower() for err_type in [
                     "connection", "timeout", "temporary", "unavailable",

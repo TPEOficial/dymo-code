@@ -792,6 +792,63 @@ class CommandHandler:
 
             return True, None
 
+        elif name == "domain":
+            from .web_tools import get_url_verifier
+
+            verifier = get_url_verifier()
+            parts = args.strip().split() if args else []
+            subcommand = parts[0].lower() if parts else "list"
+
+            if subcommand == "list":
+                # Show all domain decisions
+                rejected = verifier.get_rejected_domains()
+                accepted = verifier.get_accepted_domains()
+
+                console.print(f"\n[bold {COLORS['secondary']}]Domain Security Decisions[/]\n")
+
+                if rejected:
+                    console.print(f"[bold red]Blocked Domains ({len(rejected)}):[/]")
+                    for domain in rejected:
+                        console.print(f"  [red]✗[/] {domain}")
+                    console.print()
+
+                if accepted:
+                    console.print(f"[bold yellow]Allowed Domains ({len(accepted)}):[/]")
+                    for domain in accepted:
+                        console.print(f"  [yellow]![/] {domain} [dim](proceed at risk)[/]")
+                    console.print()
+
+                if not rejected and not accepted:
+                    console.print(f"  [{COLORS['muted']}]No domain decisions recorded yet.[/]\n")
+
+                console.print(f"[{COLORS['muted']}]Commands:[/]")
+                console.print(f"  /domain allow <domain>  - Allow access to a blocked domain")
+                console.print(f"  /domain block <domain>  - Block access to an allowed domain")
+                console.print(f"  /domain reset <domain>  - Remove decision (will ask again)")
+                console.print()
+
+            elif subcommand == "allow" and len(parts) >= 2:
+                domain = parts[1].lower()
+                verifier.allow_domain(domain)
+                display_success(f"Domain '{domain}' is now allowed")
+
+            elif subcommand == "block" and len(parts) >= 2:
+                domain = parts[1].lower()
+                verifier.block_domain(domain)
+                display_success(f"Domain '{domain}' is now blocked")
+
+            elif subcommand == "reset" and len(parts) >= 2:
+                domain = parts[1].lower()
+                if verifier.remove_domain_decision(domain):
+                    display_success(f"Decision for '{domain}' has been reset")
+                else:
+                    display_warning(f"No decision found for '{domain}'")
+
+            else:
+                display_error("Usage: /domain [list|allow <domain>|block <domain>|reset <domain>]")
+
+            return True, None
+
         elif name == "getapikey":
             from .lib.providers import (
                 API_KEY_PROVIDERS, PROVIDERS, get_provider,
