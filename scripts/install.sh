@@ -32,31 +32,29 @@ case "$OS" in
 esac
 
 # URLs
-GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
-MIRROR_URL="https://cdn.jsdelivr.net/gh/${REPO}@main/dist/${BINARY}"
+GITHUB_URL="https://github.com/${REPO}/releases/latest/download/${BINARY}"
+MIRROR_URL="https://raw.githubusercontent.com/${REPO}/main/dist/${BINARY}"
 
-# Prepare install directory
 mkdir -p "$INSTALL_DIR"
 
-# Function to download
 download_dymo() {
-    echo "Trying to fetch latest release from GitHub..."
-    VERSION=$(curl -fsSL "$GITHUB_API" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -n "$VERSION" ]; then
-        GITHUB_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
-        echo "Downloading from GitHub release $VERSION..."
-        curl -fsSL "$GITHUB_URL" -o "$OUTPUT_FILE" && return 0
-    fi
-    echo "GitHub download failed (rate limit or auth issue). Using mirror..." >&2
+    for i in 1 2 3; do
+        echo "Attempt $i: Downloading from GitHub..."
+        if curl -fsSL "$GITHUB_URL" -o "$OUTPUT_FILE"; then
+            echo "Download successful from GitHub."
+            return
+        else
+            echo "Attempt $i failed. Retrying..." >&2
+            sleep 2
+        fi
+    done
+    echo "GitHub download failed. Trying mirror..." >&2
     curl -fsSL "$MIRROR_URL" -o "$OUTPUT_FILE"
 }
 
-# Execute download
 download_dymo
-
 chmod +x "$OUTPUT_FILE"
 
-# Add to PATH if needed
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> ~/.bashrc 2>/dev/null || true
     echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> ~/.zshrc 2>/dev/null || true
