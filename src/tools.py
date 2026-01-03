@@ -1064,6 +1064,27 @@ def execute_tool(name: str, args: Dict[str, Any]) -> str:
     except TypeError as e: return f"Error: Invalid arguments for {name}: {str(e)}"
     except Exception as e: return f"Error executing {name}: {str(e)}"
 
+def _validate_tool_definition(tool: Dict[str, Any]) -> bool:
+    """Validate that a tool definition has required fields"""
+    if not isinstance(tool, dict):
+        return False
+
+    # Check for function type
+    if tool.get("type") != "function":
+        return False
+
+    # Check for function object with name
+    func = tool.get("function")
+    if not isinstance(func, dict):
+        return False
+
+    name = func.get("name")
+    if not name or not isinstance(name, str) or not name.strip():
+        return False
+
+    return True
+
+
 def get_all_tool_definitions() -> List[Dict[str, Any]]:
     """Get all tool definitions including web, multi-agent, and MCP tools"""
     all_tools = TOOL_DEFINITIONS.copy()
@@ -1081,4 +1102,7 @@ def get_all_tool_definitions() -> List[Dict[str, Any]]:
         all_tools.extend(mcp_tools)
     except Exception: pass
 
-    return all_tools
+    # Filter out invalid tool definitions to prevent API errors
+    valid_tools = [t for t in all_tools if _validate_tool_definition(t)]
+
+    return valid_tools

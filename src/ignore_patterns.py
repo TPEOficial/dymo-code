@@ -11,38 +11,83 @@ from typing import List, Set, Optional
 # Cache for loaded patterns
 _ignore_patterns: Optional[List[str]] = None
 _ignore_patterns_file_mtime: Optional[float] = None
+_ignore_patterns_file_path: Optional[Path] = None
 
 IGNORE_FILE_NAME = ".dmcodeignore"
 
+# Default patterns to always ignore (even without .dmcodeignore file)
+DEFAULT_IGNORE_PATTERNS = [
+    "node_modules",
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+    ".env",
+    "dist",
+    "build",
+    ".idea",
+    ".vscode",
+    "*.pyc",
+    "*.pyo",
+]
 
-def _get_project_root() -> Path:
-    """Get the project root directory (where .dmcodeignore would be)"""
-    return Path(os.getcwd())
+
+def _find_ignore_file(start_path: Optional[Path] = None) -> Optional[Path]:
+    """
+    Find .dmcodeignore file by searching:
+    1. In the start_path (if provided)
+    2. In current working directory
+    3. Walking up the directory tree from cwd
+    """
+    search_paths = []
+
+    # Add start_path if provided
+    if start_path:
+        search_paths.append(Path(start_path).resolve())
+
+    # Add cwd
+    cwd = Path(os.getcwd()).resolve()
+    if cwd not in search_paths:
+        search_paths.append(cwd)
+
+    # Check each location and walk up
+    for base in search_paths:
+        current = base
+        while current != current.parent:
+            ignore_file = current / IGNORE_FILE_NAME
+            if ignore_file.exists():
+                return ignore_file
+            current = current.parent
+
+    return None
 
 
-def _load_ignore_patterns(force_reload: bool = False) -> List[str]:
+def _load_ignore_patterns(force_reload: bool = False, search_path: Optional[Path] = None) -> List[str]:
     """
     Load patterns from .dmcodeignore file.
     Caches the result and reloads if file was modified.
+    Falls back to default patterns if no file found.
     """
-    global _ignore_patterns, _ignore_patterns_file_mtime
+    global _ignore_patterns, _ignore_patterns_file_mtime, _ignore_patterns_file_path
 
-    ignore_file = _get_project_root() / IGNORE_FILE_NAME
+    ignore_file = _find_ignore_file(search_path)
 
     # Check if we need to reload
     if not force_reload and _ignore_patterns is not None:
-        if ignore_file.exists():
-            current_mtime = ignore_file.stat().st_mtime
-            if current_mtime == _ignore_patterns_file_mtime:
-                return _ignore_patterns
-        elif _ignore_patterns_file_mtime is None:
-            # File didn't exist before and still doesn't
+        if ignore_file:
+            # Check if same file and not modified
+            if ignore_file == _ignore_patterns_file_path:
+                current_mtime = ignore_file.stat().st_mtime
+                if current_mtime == _ignore_patterns_file_mtime:
+                    return _ignore_patterns
+        elif _ignore_patterns_file_path is None:
+            # No file before and still no file - return cached (defaults)
             return _ignore_patterns
 
     # Load patterns from file
     patterns = []
 
-    if ignore_file.exists():
+    if ignore_file and ignore_file.exists():
         try:
             with open(ignore_file, "r", encoding="utf-8") as f:
                 for line in f:
@@ -52,10 +97,16 @@ def _load_ignore_patterns(force_reload: bool = False) -> List[str]:
                         continue
                     patterns.append(line)
             _ignore_patterns_file_mtime = ignore_file.stat().st_mtime
+            _ignore_patterns_file_path = ignore_file
         except Exception:
             _ignore_patterns_file_mtime = None
+            _ignore_patterns_file_path = None
+            patterns = DEFAULT_IGNORE_PATTERNS.copy()
     else:
+        # No .dmcodeignore found, use defaults
         _ignore_patterns_file_mtime = None
+        _ignore_patterns_file_path = None
+        patterns = DEFAULT_IGNORE_PATTERNS.copy()
 
     _ignore_patterns = patterns
     return patterns
