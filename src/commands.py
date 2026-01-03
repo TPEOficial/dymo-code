@@ -257,6 +257,15 @@ COMMANDS: Dict[str, Command] = {
         has_args=True,
         arg_hint="option"
     ),
+    "urlverify": Command(
+        name="urlverify",
+        description="Toggle URL verification with Dymo API",
+        category=CommandCategory.PROVIDERS,
+        usage="/urlverify [on|off|status]",
+        has_args=True,
+        arg_hint="on|off|status",
+        aliases=["url-verify"]
+    ),
 
     # History Commands
     "resume": Command(

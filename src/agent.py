@@ -958,7 +958,34 @@ class Agent:
                     console.print(f"[{COLORS['error']}]No other providers available. Configure more API keys with /setapikey[/]")
                     return friendly_msg
 
-            # Not a token error or quota error - show full error
+            # Check if this is a recoverable API error (not token/quota related)
+            # Try to auto-recover by retrying up to 3 times
+            if _retry_count < 3:
+                # Check for tool-related errors (might be MCP issue)
+                if "tool" in error_str.lower() and "name" in error_str.lower():
+                    log_debug(f"Tool definition error detected, retrying without MCP tools...")
+                    # Disable MCP temporarily and retry
+                    try:
+                        from .mcp import mcp_manager
+                        mcp_manager.disconnect_all()
+                    except Exception:
+                        pass
+                    display_warning(f"API error detected. Retrying... (attempt {_retry_count + 1}/3)")
+                    return self.chat(user_input, _retry_count=_retry_count + 1)
+
+                # For other transient errors, simple retry with backoff
+                if any(err_type in error_str.lower() for err_type in [
+                    "connection", "timeout", "temporary", "unavailable",
+                    "internal", "server error", "502", "503", "504"
+                ]):
+                    import time
+                    wait_time = (2 ** _retry_count)  # Exponential backoff: 1s, 2s, 4s
+                    log_debug(f"Transient error detected, retrying in {wait_time}s...")
+                    display_warning(f"Connection issue. Retrying in {wait_time}s... (attempt {_retry_count + 1}/3)")
+                    time.sleep(wait_time)
+                    return self.chat(user_input, _retry_count=_retry_count + 1)
+
+            # After 3 retries or non-recoverable error - show full error
             error_msg = f"Error: {error_str}"
             log_api_error(
                 provider=current_provider,

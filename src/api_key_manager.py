@@ -329,6 +329,7 @@ class APIKeyManager:
             "openai": "OPENAI_API_KEY",
             "google": "GOOGLE_API_KEY",
             "cerebras": "CEREBRAS_API_KEY",
+            "dymo": "DYMO_API_KEY",
         }
         self._provider_lock = threading.Lock()
         self._initialized = True
@@ -582,10 +583,14 @@ class APIKeyManager:
             "has_available": pool.has_available_keys(),
         }
 
-    def get_all_providers_info(self) -> List[Dict]:
-        """Get information about all providers"""
+    def get_all_providers_info(self, ai_only: bool = True) -> List[Dict]:
+        """Get information about all providers (optionally filter to AI providers only)"""
+        from .lib.providers import is_ai_provider
+
         info = []
         for provider in self._env_key_map.keys():
+            if ai_only and not is_ai_provider(provider):
+                continue
             info.append(self.get_provider_info(provider))
         return info
 
@@ -627,12 +632,15 @@ class APIKeyManager:
         return pool.has_available_keys()
 
     def get_fallback_providers(self, current_provider: str) -> List[str]:
-        """Get list of other providers that have available keys"""
+        """Get list of other AI providers that have available keys (excludes non-AI providers)"""
+        from .lib.providers import is_ai_provider
+
         current = current_provider.lower()
         fallbacks = []
 
         for provider in self._env_key_map.keys():
-            if provider != current and self.has_available_key(provider):
+            # Only include AI providers with available keys
+            if provider != current and self.has_available_key(provider) and is_ai_provider(provider):
                 fallbacks.append(provider)
 
         return fallbacks

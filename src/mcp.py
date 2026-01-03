@@ -155,13 +155,19 @@ class MCPServerConnection:
         if response and "result" in response:
             tools = response["result"].get("tools", [])
             for tool in tools:
+                # Skip tools without a valid name
+                tool_name = tool.get("name", "")
+                if not tool_name or not isinstance(tool_name, str) or not tool_name.strip():
+                    log_debug(f"Skipping MCP tool without valid name: {tool}")
+                    continue
+
                 mcp_tool = MCPTool(
-                    name=tool["name"],
+                    name=tool_name.strip(),
                     description=tool.get("description", ""),
                     input_schema=tool.get("inputSchema", {}),
                     server_name=self.config.name
                 )
-                self.tools[tool["name"]] = mcp_tool
+                self.tools[tool_name] = mcp_tool
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         """Call a tool on this server"""
@@ -281,12 +287,22 @@ class MCPManager:
         definitions = []
 
         for tool in self.get_all_tools():
+            # Validate tool has required fields
+            if not tool.name or not tool.server_name:
+                continue
+
+            tool_name = f"mcp_{tool.server_name}_{tool.name}"
+
+            # Ensure name is not empty after construction
+            if not tool_name.strip() or tool_name == "mcp__":
+                continue
+
             definitions.append({
                 "type": "function",
                 "function": {
-                    "name": f"mcp_{tool.server_name}_{tool.name}",
+                    "name": tool_name,
                     "description": f"[MCP:{tool.server_name}] {tool.description}",
-                    "parameters": tool.input_schema
+                    "parameters": tool.input_schema if tool.input_schema else {"type": "object", "properties": {}}
                 }
             })
 

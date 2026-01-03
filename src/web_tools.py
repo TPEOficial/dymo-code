@@ -15,6 +15,13 @@ from html.parser import HTMLParser
 import src.utils.bypasses.cloudscraper as cloudscraper
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
+# Dymo API for URL verification
+try:
+    from dymoapi import DymoAPI
+    DYMO_AVAILABLE = True
+except ImportError:
+    DYMO_AVAILABLE = False
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HTML to Text Parser
@@ -88,6 +95,102 @@ def create_ssl_context() -> ssl.SSLContext:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# URL Verifier (Dymo API)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class URLVerifier:
+    """Verifies URLs using Dymo API before fetching"""
+
+    def __init__(self):
+        self._dymo = None
+        self._enabled = True  # Enabled by default if API key is available
+        self._load_settings()
+
+    def _load_settings(self):
+        """Load settings from storage"""
+        try:
+            from .storage import user_config
+            self._enabled = user_config.get("url_verification_enabled", True)
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        """Save settings to storage"""
+        try:
+            from .storage import user_config
+            user_config.set("url_verification_enabled", self._enabled)
+        except Exception:
+            pass
+
+    def _get_client(self):
+        """Get Dymo API client (lazy initialization)"""
+        if self._dymo is None and DYMO_AVAILABLE:
+            try:
+                from .api_key_manager import api_key_manager
+                api_key = api_key_manager.get_key("dymo")
+                if api_key:
+                    self._dymo = DymoAPI({"api_key": api_key})
+            except Exception:
+                pass
+        return self._dymo
+
+    def set_enabled(self, enabled: bool):
+        """Enable or disable URL verification"""
+        self._enabled = enabled
+        self._save_settings()
+
+    def is_enabled(self) -> bool:
+        """Check if verification is enabled"""
+        return self._enabled
+
+    def is_available(self) -> bool:
+        """Check if Dymo API verification is available"""
+        return DYMO_AVAILABLE and self._get_client() is not None
+
+    def verify_url(self, url: str) -> dict:
+        """
+        Verify a URL using Dymo API.
+        Returns dict with 'safe' (bool), 'reason' (str), 'details' (dict)
+        """
+        client = self._get_client()
+        if not client or not self._enabled:
+            return {"safe": True, "reason": "verification_disabled", "details": {}}
+
+        try:
+            # Extract domain from URL
+            parsed = urllib.parse.urlparse(url)
+            domain = parsed.netloc
+
+            result = client.is_valid_data_raw({
+                "url": url,
+                "domain": domain
+            })
+
+            # Analyze response
+            is_safe = True
+            reason = "verified"
+
+            if result.get("fraud"):
+                is_safe = False
+                reason = "fraud_detected"
+            elif not result.get("valid"):
+                is_safe = False
+                reason = "invalid_url"
+
+            return {
+                "safe": is_safe,
+                "reason": reason,
+                "details": result
+            }
+        except Exception as e:
+            # Fail-open: allow fetch on verification error
+            return {"safe": True, "reason": f"verification_error: {e}", "details": {}}
+
+
+_url_verifier = URLVerifier()
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Web Fetch Result
@@ -191,13 +294,14 @@ class WebFetcher:
 
         return result
 
-    def fetch(self, url: str, max_chars: int = 50000) -> WebFetchResult:
+    def fetch(self, url: str, max_chars: int = 50000, verify_url: bool = True) -> WebFetchResult:
         """
         Fetch a URL and return its content as text.
 
         Args:
             url: The URL to fetch
             max_chars: Maximum characters to return
+            verify_url: Whether to verify URL with Dymo API (default True if available)
 
         Returns:
             WebFetchResult with the page content
@@ -209,6 +313,13 @@ class WebFetcher:
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
                 result.url = url
+
+            # Verify URL with Dymo API if enabled
+            if verify_url and _url_verifier.is_available():
+                verification = _url_verifier.verify_url(url)
+                if not verification["safe"]:
+                    result.error = f"URL blocked: {verification['reason']}"
+                    return result
 
             # Create request.
             request = urllib.request.Request(
@@ -519,18 +630,19 @@ def web_search(query: str, num_results: int = 5) -> str:
     return "\n".join(output)
 
 
-def fetch_url(url: str, max_chars: int = 50000) -> str:
+def fetch_url(url: str, max_chars: int = 50000, verify: bool = True) -> str:
     """
     Fetch and read the content of a URL.
 
     Args:
         url: The URL to fetch
         max_chars: Maximum characters to return (default 50000)
+        verify: Verify URL safety with Dymo API (default True if API key configured)
 
     Returns:
         The page content as text
     """
-    result = _fetcher.fetch(url, max_chars)
+    result = _fetcher.fetch(url, max_chars, verify_url=verify)
 
     if not result.success: return f"Failed to fetch {url}: {result.error}"
 
@@ -669,8 +781,29 @@ def execute_web_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
     else: return f"Unknown web tool: {tool_name}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# URL Verification Control
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def set_url_verification(enabled: bool):
+    """Enable or disable URL verification with Dymo API"""
+    _url_verifier.set_enabled(enabled)
+
+def is_url_verification_enabled() -> bool:
+    """Check if URL verification is enabled"""
+    return _url_verifier.is_enabled()
+
+def is_url_verification_available() -> bool:
+    """Check if URL verification is available (Dymo API key configured)"""
+    return _url_verifier.is_available()
+
+def get_url_verifier():
+    """Get the URL verifier instance"""
+    return _url_verifier
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Global Instances
 # ═══════════════════════════════════════════════════════════════════════════════
 
 web_fetcher = _fetcher
 web_searcher = _searcher
+url_verifier = _url_verifier

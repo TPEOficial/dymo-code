@@ -90,9 +90,9 @@ $ python run.py
 
 | Name                                          | Status              | Active |
 |-----------------------------------------------|---------------------|--------|
-| AI Chat                                       | In development      |   ✅   |
+| AI Chat                                       | Active              |   ✅   |
 | Parallel Multi-Agent	                        | Active              |   ✅   |
-| Support for multiple AI providers             | In development      |   ⚠️   |
+| Support for multiple AI providers             | Active              |   ✅   |
 | Jailbreak Mode                                | In development      |   ⚠️   |
 | MCP Support                                   | In BETA Phase       |   ⚠️   |
 | Multi-Key Pool System                         | Active              |   ✅   |
@@ -108,9 +108,10 @@ $ python run.py
 | Name                                          | Status              | Active |
 |-----------------------------------------------|---------------------|--------|
 | Command Correction System                     | Active              |   ✅   |
-| Scanning URLs before opening them             | In development      |   ⚠️   |
+| Scanning URLs before opening them             | Active              |   ✅   |
 | Automatic API Key change when credits run out | Active              |   ✅   |
 | Task Management System                        | Active              |   ✅   |
+| Intelligent Self-Repair System                | Active              |   ✅   |
 
 </details>
 
@@ -151,6 +152,26 @@ And coming soon...
   The best provider is undoubtedly Anthropic with Claude in its latest version, but this option is the most expensive and limited of all.
 
   As an alternative option to avoid having to run it locally, we recommend **Groq**, which allows up to ~14,500K on average depending on the model per day, being quite fast and free.
+</details>
+
+<details>
+  <summary>How do I enable URL security scanning before opening them?</summary>
+  
+  The steps to achieve this are quite simple.
+
+  First, register with Dymo [here](https://dymo.tpeoficial.com/oauth).
+
+  Then go to API Keys and create one. You can do this directly from [here](https://tpe.li/new-api-key).
+
+  Now, simply using the command `setapikey dymo <your-api-key>` will configure it by default.
+
+  By default, the URL scanning system is active, but you can disable it with the command `/urlverify off`.
+</details>
+
+<details>
+  <summary>What is the Intelligent Self-Repair System?</summary>
+  
+  The Intelligent Self-Repair System manages and controls errors that occur during the use of Dymo Code, and attempts to handle them using tools and AI so that the process and assigned tasks can continue without having to stop execution.
 </details>
 
 #### Author

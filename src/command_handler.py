@@ -747,6 +747,51 @@ class CommandHandler:
 
             return True, None
 
+        elif name == "urlverify":
+            from .web_tools import (
+                set_url_verification,
+                is_url_verification_enabled,
+                is_url_verification_available
+            )
+
+            args_lower = args.strip().lower() if args else ""
+
+            if args_lower in ("on", "enable", "true", "1"):
+                if not is_url_verification_available():
+                    display_error("Dymo API key not configured.")
+                    console.print(f"[{COLORS['muted']}]Set it with: /setapikey dymo <key>[/]")
+                    return True, None
+                set_url_verification(True)
+                display_success("URL verification enabled")
+
+            elif args_lower in ("off", "disable", "false", "0"):
+                set_url_verification(False)
+                display_success("URL verification disabled")
+
+            elif args_lower in ("status", ""):
+                available = is_url_verification_available()
+                enabled = is_url_verification_enabled()
+
+                console.print(f"\n[bold {COLORS['secondary']}]URL Verification (Dymo API)[/]\n")
+
+                if not available:
+                    console.print(f"  [{COLORS['muted']}]Status: Not available (no Dymo API key)[/]")
+                    console.print(f"\n[{COLORS['muted']}]Set API key with: /setapikey dymo <key>[/]")
+                else:
+                    status = "Enabled" if enabled else "Disabled"
+                    status_color = COLORS['success'] if enabled else COLORS['muted']
+                    console.print(f"  Status: [{status_color}]{status}[/]")
+                    console.print(f"\n[{COLORS['muted']}]Commands:[/]")
+                    console.print(f"  /urlverify on  - Enable URL verification")
+                    console.print(f"  /urlverify off - Disable URL verification")
+
+                console.print()
+
+            else:
+                display_error("Usage: /urlverify [on|off|status]")
+
+            return True, None
+
         elif name == "getapikey":
             from .lib.providers import (
                 API_KEY_PROVIDERS, PROVIDERS, get_provider,

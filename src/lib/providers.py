@@ -19,6 +19,7 @@ class ProviderInfo:
     description: str
     api_key_url: str
     env_key: str
+    provides_ai: bool = True  # Whether this provider offers AI/LLM services
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Provider Definitions
@@ -66,6 +67,14 @@ PROVIDERS: Dict[str, ProviderInfo] = {
         description="Ultra-fast inference API",
         api_key_url="https://cloud.cerebras.ai/",
         env_key="CEREBRAS_API_KEY"
+    ),
+    "dymo": ProviderInfo(
+        id="dymo",
+        name="Dymo API",
+        description="URL/Domain verification and fraud detection",
+        api_key_url="https://tpeoficial.com/p/dymo-api",
+        env_key="DYMO_API_KEY",
+        provides_ai=False
     )
 }
 
@@ -155,3 +164,19 @@ def get_provider_description(provider: str) -> str:
     """Get description for a provider"""
     info = get_provider(provider)
     return info.description if info else ""
+
+def is_ai_provider(provider: str) -> bool:
+    """Check if a provider offers AI/LLM services"""
+    info = get_provider(provider)
+    return info.provides_ai if info else False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Provider Categories
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Providers that offer AI/LLM services (for rotation/load balancing)
+AI_PROVIDERS: List[str] = [p for p, info in PROVIDERS.items() if info.provides_ai]
+
+# Utility providers (no AI services)
+UTILITY_PROVIDERS: List[str] = [p for p, info in PROVIDERS.items() if not info.provides_ai]
