@@ -1,36 +1,34 @@
 # Dymo Code Installer - Windows
-# Usage: iwr -useb https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.ps1 | iex.
+# Usage: iwr -useb https://raw.githubusercontent.com/TPEOficial/dymo-code/main/scripts/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 $Repo = "TPEOficial/dymo-code"
 $InstallDir = "$env:LOCALAPPDATA\dymo-code"
-
-# Get latest version.
-try {
-    $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    $Version = $Release.tag_name
-} catch {
-    Write-Host "Failed to fetch release info from GitHub." -ForegroundColor Yellow
-    throw
-}
-
-$GitHubUrl = "https://github.com/$Repo/releases/download/$Version/dymo-code-windows-amd64.exe"
-$MirrorUrl = "https://cdn.jsdelivr.net/gh/$Repo@main/dist/dymo-code-windows-amd64.exe"
 $OutputFile = "$InstallDir\dymo-code.exe"
 
-# Prepare install directory.
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Download with fallback.
-try {
-    Invoke-WebRequest -Uri $GitHubUrl -OutFile $OutputFile
-} catch {
-    Write-Host "GitHub download failed. Trying mirror..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $MirrorUrl -OutFile $OutputFile
+# URLs
+$GitHubLatestReleaseApi = "https://api.github.com/repos/$Repo/releases/latest"
+$MirrorUrl = "https://cdn.jsdelivr.net/gh/$Repo@main/dist/dymo-code-windows-amd64.exe"
+
+function Download-Dymo {
+    try {
+        Write-Host "Trying to fetch latest release from GitHub..."
+        $Release = Invoke-RestMethod -Uri $GitHubLatestReleaseApi
+        $Version = $Release.tag_name
+        $GitHubUrl = "https://github.com/$Repo/releases/download/$Version/dymo-code-windows-amd64.exe"
+        Write-Host "Downloading from GitHub release $Version..."
+        Invoke-WebRequest -Uri $GitHubUrl -OutFile $OutputFile
+    } catch {
+        Write-Host "GitHub download failed (rate limit or auth issue). Using mirror..." -ForegroundColor Yellow
+        Invoke-WebRequest -Uri $MirrorUrl -OutFile $OutputFile
+    }
 }
 
-# Add to PATH.
+Download-Dymo
+
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")

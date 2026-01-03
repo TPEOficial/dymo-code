@@ -6,6 +6,7 @@ set -e
 
 REPO="TPEOficial/dymo-code"
 INSTALL_DIR="${HOME}/.local/bin"
+OUTPUT_FILE="${INSTALL_DIR}/dymo-code"
 
 # Detect OS and architecture
 OS=$(uname -s)
@@ -30,24 +31,30 @@ case "$OS" in
         echo "Unsupported OS"; exit 1 ;;
 esac
 
-# Get latest version
-VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-          | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-[ -z "$VERSION" ] && { echo "Failed to get version"; exit 1; }
-
-GITHUB_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
+# URLs
+GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
 MIRROR_URL="https://cdn.jsdelivr.net/gh/${REPO}@main/dist/${BINARY}"
 
 # Prepare install directory
 mkdir -p "$INSTALL_DIR"
 
-# Download with fallback
-if ! curl -fsSL "$GITHUB_URL" -o "${INSTALL_DIR}/dymo-code"; then
-    echo "GitHub download failed. Trying mirror..."
-    curl -fsSL "$MIRROR_URL" -o "${INSTALL_DIR}/dymo-code"
-fi
+# Function to download
+download_dymo() {
+    echo "Trying to fetch latest release from GitHub..."
+    VERSION=$(curl -fsSL "$GITHUB_API" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -n "$VERSION" ]; then
+        GITHUB_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
+        echo "Downloading from GitHub release $VERSION..."
+        curl -fsSL "$GITHUB_URL" -o "$OUTPUT_FILE" && return 0
+    fi
+    echo "GitHub download failed (rate limit or auth issue). Using mirror..." >&2
+    curl -fsSL "$MIRROR_URL" -o "$OUTPUT_FILE"
+}
 
-chmod +x "${INSTALL_DIR}/dymo-code"
+# Execute download
+download_dymo
+
+chmod +x "$OUTPUT_FILE"
 
 # Add to PATH if needed
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
