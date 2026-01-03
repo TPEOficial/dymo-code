@@ -231,8 +231,7 @@ class AgentManager:
         with self.lock:
             self.tasks[task_id] = task
 
-            if parent_task_id and parent_task_id in self.tasks:
-                self.tasks[parent_task_id].subtasks.append(task_id)
+            if parent_task_id and parent_task_id in self.tasks: self.tasks[parent_task_id].subtasks.append(task_id)
 
         return task
 
@@ -266,18 +265,17 @@ class AgentManager:
 
         if run_async:
             future = self.executor.submit(execute_and_cleanup)
-            with self.lock:
+            with self.lock: 
                 self.task_futures[task.id] = future
             return task.id
         else: return execute_and_cleanup()
 
     def _handle_progress(self, task: AgentTask):
         """Handle task progress updates"""
-        with self.lock:
+        with self.lock: 
             self.tasks[task.id] = task
 
-        if self.on_task_update:
-            self.on_task_update(task)
+        if self.on_task_update: self.on_task_update(task)
 
     def get_task(self, task_id: str) -> Optional[AgentTask]:
         """Get a task by ID"""
@@ -313,9 +311,8 @@ class AgentManager:
                             worker.cancel()
                             break
 
-                    # Cancel future if exists
-                    if task_id in self.task_futures:
-                        self.task_futures[task_id].cancel()
+                    # Cancel future if exists.
+                    if task_id in self.task_futures: self.task_futures[task_id].cancel()
 
                     return True
         return False
@@ -324,8 +321,7 @@ class AgentManager:
         """Cancel all running and queued tasks"""
         with self.lock:
             for task in self.tasks.values():
-                if task.status in [AgentStatus.QUEUED, AgentStatus.RUNNING]:
-                    task.status = AgentStatus.CANCELLED
+                if task.status in [AgentStatus.QUEUED, AgentStatus.RUNNING]: task.status = AgentStatus.CANCELLED
 
             for worker in self.workers.values():
                 worker.cancel()
@@ -339,10 +335,8 @@ class AgentManager:
             future = self.task_futures.get(task_id)
 
         if future:
-            try:
-                future.result(timeout=timeout)
-            except Exception:
-                pass
+            try: future.result(timeout=timeout)
+            except Exception: pass
 
         return self.get_task(task_id)
 

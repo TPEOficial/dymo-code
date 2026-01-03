@@ -55,29 +55,36 @@ def setup_windows() -> Tuple[bool, str]:
         (success, message)
     """
     try:
-        exe_path = get_executable_path()
-
         # Create bin directory in local app data
         app_data = Path(os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local')))
-        bin_dir = app_data / "Dymo-Code" / "bin"
+        install_dir = app_data / "Dymo-Code"
+        bin_dir = install_dir / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create batch file
-        bat_path = bin_dir / "dymo-code.bat"
+        # Determine the best executable path to use
+        # Priority: 1. Compiled exe in install dir, 2. Current frozen exe, 3. Python script (fallback)
+        installed_exe = install_dir / "dymo-code.exe"
 
-        if getattr(sys, 'frozen', False):
+        if installed_exe.exists():
+            # Use the installed executable (relative path for portability)
+            bat_content = f'@echo off\n"%~dp0..\\dymo-code.exe" %*'
+        elif getattr(sys, 'frozen', False):
+            # Running as compiled exe, use absolute path to current exe
+            exe_path = get_executable_path()
             bat_content = f'@echo off\n"{exe_path}" %*'
         else:
-            # For Python script - use the run.py in the project root
+            # Fallback: Python script (development mode only)
             python_exe = sys.executable
-            # Navigate to project root (parent of src directory)
             project_root = Path(__file__).parent.parent
             run_script = project_root / "run.py"
             if run_script.exists():
                 bat_content = f'@echo off\n"{python_exe}" "{run_script}" %*'
             else:
+                exe_path = get_executable_path()
                 bat_content = f'@echo off\n"{python_exe}" "{exe_path}" %*'
 
+        # Create batch file
+        bat_path = bin_dir / "dymo-code.bat"
         bat_path.write_text(bat_content, encoding='utf-8')
 
         # Also create a cmd file for compatibility

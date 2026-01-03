@@ -7,6 +7,9 @@ from typing import Dict, Any, Callable, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
+# Import ignore patterns module
+from .ignore_patterns import should_ignore, is_path_component_ignored, filter_paths
+
 # Import web tools
 from .web_tools import (
     web_search,
@@ -78,7 +81,16 @@ def list_files_in_dir(directory: str = ".") -> str:
         files = []
         dirs = []
         for item in items:
+            # Skip items that match ignore patterns
+            if is_path_component_ignored(item):
+                continue
+
             path = os.path.join(directory, item)
+
+            # Also check full path against ignore patterns
+            if should_ignore(path):
+                continue
+
             if os.path.isdir(path):
                 dirs.append(f"[dir] {item}/")
             else:
@@ -91,7 +103,7 @@ def list_files_in_dir(directory: str = ".") -> str:
         if dirs: result.extend(sorted(dirs))
         if files: result.extend(sorted(files))
 
-        return "\n".join(result)
+        return "\n".join(result) if result else "Directory is empty (or all items are ignored)."
     except FileNotFoundError: return f"Error: Directory '{directory}' not found."
     except PermissionError: return f"Error: Permission denied to access '{directory}'."
     except Exception as e: return f"Error: {str(e)}"
@@ -396,6 +408,7 @@ def glob_search(pattern: str = "", path: str = ".", recursive: bool = True, max_
     """
     Search for files matching a glob pattern.
     Supports patterns like: **/*.py, src/**/*.ts, *.json, etc.
+    Respects .dmcodeignore patterns.
     """
     if not pattern: return "Error: pattern is required"
 
@@ -415,6 +428,14 @@ def glob_search(pattern: str = "", path: str = ".", recursive: bool = True, max_
             match_path = Path(match)
             # Skip hidden files/dirs unless pattern explicitly includes them.
             if not pattern.startswith(".") and any(p.startswith(".") for p in match_path.parts): continue
+
+            # Skip files/dirs that match ignore patterns
+            if should_ignore(str(match_path), base_path):
+                continue
+
+            # Also check individual path components
+            if any(is_path_component_ignored(part) for part in match_path.parts):
+                continue
 
             try:
                 rel_path = match_path.relative_to(base_path)
@@ -460,6 +481,7 @@ def grep_search(
     """
     Search for content in files using regex pattern.
     Similar to grep command but returns structured results.
+    Respects .dmcodeignore patterns.
     """
     if not pattern: return "Error: pattern is required"
 
@@ -486,6 +508,14 @@ def grep_search(
             # Skip directories and hidden files.
             if fp.is_dir(): continue
             if any(p.startswith(".") for p in fp.parts): continue
+
+            # Skip files that match ignore patterns
+            if should_ignore(str(fp), base_path):
+                continue
+
+            # Also check individual path components
+            if any(is_path_component_ignored(part) for part in fp.parts):
+                continue
 
             # Skip binary files.
             try:
@@ -556,6 +586,7 @@ def find_and_replace(
 ) -> str:
     """
     Find and replace text in files. Use dry_run=True to preview changes.
+    Respects .dmcodeignore patterns.
     """
     if not search_pattern: return "Error: search_pattern is required"
 
@@ -573,6 +604,14 @@ def find_and_replace(
         for file_path in glob.iglob(glob_pattern, recursive=True):
             fp = Path(file_path)
             if fp.is_dir() or any(p.startswith(".") for p in fp.parts): continue
+
+            # Skip files that match ignore patterns
+            if should_ignore(str(fp), base_path):
+                continue
+
+            # Also check individual path components
+            if any(is_path_component_ignored(part) for part in fp.parts):
+                continue
 
             try:
                 with open(fp, "r", encoding="utf-8") as f:

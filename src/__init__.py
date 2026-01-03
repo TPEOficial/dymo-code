@@ -44,5 +44,5 @@ __all__ = [
     "get_db_path",
     "get_history_directory",
     "get_logs_directory",
-    "ensure_directories",
+    "ensure_directories"
 ]

@@ -15,7 +15,6 @@ from enum import Enum
 
 from .logger import log_debug, log_error
 
-
 class KeyStatus(Enum):
     """Status of an API key"""
     ACTIVE = "active"
@@ -30,12 +29,10 @@ class RotationStrategy(Enum):
     SEQUENTIAL = "sequential"      # Use one key until limit, then switch
     LOAD_BALANCER = "load_balancer"  # Distribute requests across all keys
 
-
 # Callbacks for notifications
 _on_key_rotated: Optional[Callable[[str, str, str], None]] = None  # provider, old_key, new_key
 _on_model_fallback: Optional[Callable[[str, str, str], None]] = None  # provider, old_model, new_model
 _on_provider_exhausted: Optional[Callable[[str], None]] = None  # provider
-
 
 def set_rotation_callbacks(
     on_key_rotated: Optional[Callable] = None,
@@ -47,7 +44,6 @@ def set_rotation_callbacks(
     _on_key_rotated = on_key_rotated
     _on_model_fallback = on_model_fallback
     _on_provider_exhausted = on_provider_exhausted
-
 
 @dataclass
 class APIKeyInfo:
@@ -75,12 +71,9 @@ class APIKeyInfo:
 
     def is_available(self) -> bool:
         """Check if key is currently available for use"""
-        if self.status == KeyStatus.INVALID:
-            return False
-        if self.status == KeyStatus.EXHAUSTED:
-            return False
-        if self.cooldown_until and datetime.now() < self.cooldown_until:
-            return False
+        if self.status == KeyStatus.INVALID: return False
+        if self.status == KeyStatus.EXHAUSTED: return False
+        if self.cooldown_until and datetime.now() < self.cooldown_until: return False
         return True
 
 

@@ -97,6 +97,7 @@ hiddenimports = [
     'src.context_manager',
     'src.utils',
     'src.utils.basics',
+    'src.ignore_patterns',
     # Cloudscraper bypass modules
     'src.utils.bypasses',
     'src.utils.bypasses.cloudscraper',

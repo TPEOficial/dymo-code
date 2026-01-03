@@ -1,0 +1,46 @@
+# Compiled Python files.
+*.pyc
+*.pyo
+*.pyd
+
+# Python cache directories.
+__pycache__
+
+# Virtual environments.
+venv
+.venv
+env
+.env
+
+# Build and distribution directories.
+build
+dist
+*.egg-info
+
+# IDE and editor directories.
+.idea
+.vscode
+*.swp
+*.swo
+
+# Claude Code local configurations.
+.claude
+
+# Astro framework.
+.astro
+
+# Node.JS/npm directories.
+node_modules
+
+# Git directory.
+.git
+
+# Test and coverage.
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# OS generated files.
+.DS_Store
+Thumbs.db
