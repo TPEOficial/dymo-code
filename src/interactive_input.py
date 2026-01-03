@@ -221,46 +221,76 @@ class InteractiveInput:
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column("Icon", width=3)
         table.add_column("Name", style="white")
-        table.add_column("Type", style=f"{COLORS['muted']}")
+        table.add_column("Info", style=f"{COLORS['muted']}")
 
-        for i, path_info in enumerate(self.suggestions[:8]):
+        for i, path_info in enumerate(self.suggestions[:10]):
             icon = path_info["icon"]
             name = path_info["name"]
-            meta = "directory" if path_info["is_dir"] else "file"
+            # Use meta if available (contains file count for dirs, size for files)
+            meta = path_info.get("meta", "directory" if path_info["is_dir"] else "file")
+
+            # Add visual hint for directories with content
+            if path_info["is_dir"]:
+                name_display = f"{name}/"
+                # Add arrow hint to indicate drill-down
+                if path_info.get("file_count", 0) > 0 or path_info.get("dir_count", 0) > 0:
+                    name_display += " →"
+            else:
+                name_display = name
 
             if i == self.selected_index:
                 table.add_row(
                     f"[{COLORS['primary']}]{icon}[/]",
-                    f"[bold {COLORS['primary']}]{name}[/]",
+                    f"[bold {COLORS['primary']}]{name_display}[/]",
                     f"[{COLORS['primary']}]{meta}[/]"
                 )
             else:
-                table.add_row(icon, name, meta)
+                table.add_row(icon, name_display, meta)
+
+        # Add hint at the bottom
+        hint = "[Tab] select  [Enter] confirm  [Esc] cancel"
+        if any(s["is_dir"] for s in self.suggestions[:10]):
+            hint = "[Tab] drill-down  [Enter] confirm folder  [Esc] cancel"
 
         return Panel(
             table,
             title="[bold]@ Path[/bold]",
+            subtitle=f"[{COLORS['muted']}]{hint}[/]",
             border_style=COLORS['primary'],
             box=ROUNDED,
             padding=(0, 1)
         )
 
-    def _complete_selected(self):
-        """Complete input with selected suggestion"""
+    def _complete_selected(self, force_close: bool = False):
+        """
+        Complete input with selected suggestion.
+        For directories: drill-down to show contents (unless force_close=True)
+        For files: complete and close suggestions
+        """
         if self.suggestions and 0 <= self.selected_index < len(self.suggestions):
             if self.suggestion_type == "command":
                 cmd = self.suggestions[self.selected_index]
                 self.buffer = f"/{cmd.name}"
                 if cmd.has_args:
                     self.buffer += " "
+                self.showing_suggestions = False
             else:
                 # Path completion
                 at_index = self.buffer.rfind("@")
                 path_info = self.suggestions[self.selected_index]
                 self.buffer = self.buffer[:at_index + 1] + path_info["path"]
 
+                # For directories: drill-down (show contents) unless force_close
+                if path_info["is_dir"] and not force_close:
+                    # Update suggestions to show directory contents
+                    self._update_suggestions()
+                    self.selected_index = 0
+                    # Keep showing suggestions
+                else:
+                    # For files or forced close: close suggestions
+                    self.showing_suggestions = False
+
             self.cursor_pos = len(self.buffer)
-            self.showing_suggestions = False
 
     def get_input(self, prompt_prefix: str = "") -> str:
         """
@@ -279,8 +309,18 @@ class InteractiveInput:
             if msvcrt.kbhit():
                 char = msvcrt.getwch()
 
-                # Enter - submit
+                # Enter - submit or confirm selection
                 if char == '\r':
+                    # If showing path suggestions and a directory is selected, confirm it
+                    if self.showing_suggestions and self.suggestion_type == "path":
+                        if self.suggestions and 0 <= self.selected_index < len(self.suggestions):
+                            path_info = self.suggestions[self.selected_index]
+                            # Complete the selection (force close for directories)
+                            self._complete_selected(force_close=True)
+                            self._clear_line()
+                            self._render_input_line()
+                            continue  # Don't submit yet, let user continue typing or submit
+
                     console.print()  # New line
                     result = self.buffer.strip()
                     if result:
@@ -354,8 +394,12 @@ class InteractiveInput:
                     self._clear_line()
                     self._render_input_line()
 
-                    # Show suggestions if typing a command
-                    if self.showing_suggestions:
+                    # Show suggestions if typing a command or path
+                    # Always show after typing / in a path context
+                    if self.showing_suggestions or (char == "/" and "@" in self.buffer):
+                        if "@" in self.buffer and char == "/":
+                            # Force update suggestions when typing / in path
+                            self._update_suggestions()
                         self._render_suggestions()
 
 

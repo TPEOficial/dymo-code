@@ -100,6 +100,7 @@ $ python run.py
 | Search engine with bypass                     | Active              |   ✅   |
 | Command Permission System                     | Active              |   ✅   |
 | Advanced History Management System            | Active              |   ✅   |
+| Automatic Prompt Improvement System           | Active              |   ✅   |
 
 <details>
   <summary>Other features</summary>
@@ -130,7 +131,7 @@ $ python run.py
 
 And coming soon...
 
-# Frequently Asked Questions
+## Frequently Asked Questions
 
 <details>
   <summary>What is the Multi-Key Pool System?</summary>

@@ -164,78 +164,129 @@ def show_status(model_key: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def display_tool_call(name: str, args: dict, verbose: bool = True):
-    """Display a tool call in the terminal"""
-    import json
-
+    """Display a tool call in compact Claude Code style"""
     # Skip display for folder creation (it's usually just a preparatory step)
-    if name == "create_folder" and not verbose: return
+    if name == "create_folder" and not verbose:
+        return
 
-    tool_text = Text()
-    tool_text.append("⚡ ", style=f"{COLORS['warning']}")
-    tool_text.append("Tool: ", style=f"{COLORS['muted']}")
-    tool_text.append(f"{name}", style=f"bold {COLORS['accent']}")
-
+    # Format arguments inline with green dot and bold white text
     if args:
-        args_str = json.dumps(args, indent=2)
-        console.print(tool_text)
-        console.print(
-            Syntax(args_str, "json", theme="monokai", line_numbers=False),
-            style="dim"
-        )
-    else: console.print(tool_text)
+        # Format key arguments for common tools
+        if name == "read_file":
+            path = args.get("file_path", args.get("path", ""))
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Read[/][white]({path})[/]")
+        elif name == "glob_search":
+            pattern = args.get("pattern", "")
+            path = args.get("path", ".")
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Search[/][white](pattern: \"{pattern}\", path: \"{path}\")[/]")
+        elif name == "grep_search":
+            pattern = args.get("pattern", "")
+            path = args.get("path", ".")
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Grep[/][white](pattern: \"{pattern}\", path: \"{path}\")[/]")
+        elif name == "list_files_in_dir":
+            directory = args.get("directory", args.get("path", "."))
+            console.print(f"[{COLORS['success']}]●[/] [bold white]List[/][white]({directory})[/]")
+        elif name == "create_file":
+            path = args.get("file_path", args.get("path", ""))
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Write[/][white]({path})[/]")
+        elif name == "update_file":
+            path = args.get("file_path", args.get("path", ""))
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Edit[/][white]({path})[/]")
+        elif name == "run_command":
+            cmd = args.get("command", "")
+            if len(cmd) > 60:
+                cmd = cmd[:60] + "..."
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Bash[/][white]({cmd})[/]")
+        elif name == "web_search":
+            query = args.get("query", "")
+            console.print(f"[{COLORS['success']}]●[/] [bold white]WebSearch[/][white](\"{query}\")[/]")
+        elif name == "fetch_url":
+            url = args.get("url", "")
+            console.print(f"[{COLORS['success']}]●[/] [bold white]Fetch[/][white]({url})[/]")
+        else:
+            # Generic format for other tools
+            args_str = ", ".join(f"{k}: {repr(v)[:30]}" for k, v in list(args.items())[:3])
+            console.print(f"[{COLORS['success']}]●[/] [bold white]{name}[/][white]({args_str})[/]")
+    else:
+        console.print(f"[{COLORS['success']}]●[/] [bold white]{name}[/][white]()[/]")
 
 def display_tool_result(result: str, tool_name: str = None):
-    """Display a tool result with diff support for file operations"""
+    """Display a tool result in compact Claude Code style"""
     from .tools import get_last_file_change, clear_last_file_change
 
     file_change = get_last_file_change()
 
-    # Use diff display for file operations
+    # Use compact display for file operations
     if file_change and file_change.success:
         if file_change.change_type == "create":
-            # New file - show all lines as additions
-            display_file_creation(file_change.file_path, file_change.new_content or "")
+            # New file created
+            lines = len((file_change.new_content or "").splitlines())
+            console.print(f"  [{COLORS['muted']}]⎿[/]  Created ({lines} lines)")
             clear_last_file_change()
             return
         elif file_change.change_type == "modify":
-            # Modified file - show unified diff
+            # Modified file
             if file_change.old_content is not None and file_change.new_content is not None:
-                display_file_diff(
-                    file_change.file_path,
-                    file_change.old_content,
-                    file_change.new_content
-                )
-                # Also show summary
                 old_lines = len(file_change.old_content.splitlines())
                 new_lines = len(file_change.new_content.splitlines())
                 additions = max(0, new_lines - old_lines)
                 deletions = max(0, old_lines - new_lines)
-                display_edit_summary(file_change.file_path, additions, deletions)
+
+                change_info = []
+                if additions > 0:
+                    change_info.append(f"[{COLORS['success']}]+{additions}[/]")
+                if deletions > 0:
+                    change_info.append(f"[{COLORS['error']}]-{deletions}[/]")
+
+                if change_info:
+                    console.print(f"  [{COLORS['muted']}]⎿[/]  Edited ({', '.join(change_info)} lines)")
+                else:
+                    console.print(f"  [{COLORS['muted']}]⎿[/]  Edited (no line changes)")
                 clear_last_file_change()
                 return
         elif file_change.change_type == "read":
-            # File read - show with line numbers
+            # File read
             if file_change.new_content:
-                display_file_read(file_change.file_path, file_change.new_content)
+                lines = len(file_change.new_content.splitlines())
+                console.print(f"  [{COLORS['muted']}]⎿[/]  Read {lines} lines")
                 clear_last_file_change()
                 return
 
     clear_last_file_change()
 
-    # Default display for other results
-    if len(result) > 500: display_result = result[:500] + "\n... (truncated)"
-    else: display_result = result
+    # Compact display for other results
+    result_lines = result.strip().split('\n')
+    line_count = len(result_lines)
 
-    console.print("\n")
-    console.print(
-        Panel(
-            display_result,
-            title="Tool Result",
-            title_align="left",
-            border_style=f"{COLORS['success']}",
-            box=ROUNDED
-        )
-    )
+    if line_count == 0 or not result.strip():
+        console.print(f"  [{COLORS['muted']}]⎿[/]  (empty)")
+    elif line_count == 1 and len(result) < 80:
+        # Single short line - show inline
+        console.print(f"  [{COLORS['muted']}]⎿[/]  {result.strip()}")
+    elif "Error" in result or "error" in result.lower():
+        # Error - show with emphasis
+        preview = result_lines[0][:60] + "..." if len(result_lines[0]) > 60 else result_lines[0]
+        console.print(f"  [{COLORS['error']}]⎿[/]  {preview}")
+        if line_count > 1:
+            console.print(f"      [{COLORS['muted']}](+{line_count - 1} more lines)[/]")
+    else:
+        # Multi-line or long result - show summary
+        if tool_name == "glob_search" or tool_name == "grep_search":
+            # Count matches
+            if "Found" in result:
+                console.print(f"  [{COLORS['muted']}]⎿[/]  {result_lines[0]}")
+            else:
+                console.print(f"  [{COLORS['muted']}]⎿[/]  Found {line_count} items")
+        elif tool_name == "list_files_in_dir":
+            console.print(f"  [{COLORS['muted']}]⎿[/]  {line_count} items")
+        elif tool_name == "run_command":
+            # Show first line of output
+            preview = result_lines[0][:60] + "..." if len(result_lines[0]) > 60 else result_lines[0]
+            console.print(f"  [{COLORS['muted']}]⎿[/]  {preview}")
+            if line_count > 1:
+                console.print(f"      [{COLORS['muted']}](+{line_count - 1} more lines)[/]")
+        else:
+            console.print(f"  [{COLORS['muted']}]⎿[/]  {line_count} lines")
 
 def display_executed_tool(tool_type: str, arguments: str, output: str):
     """Display a tool that was executed by Groq's built-in system (code_interpreter, web_search)"""
@@ -324,6 +375,27 @@ def display_error(message: str):
     """Display an error message"""
     console.print()  # Newline before panel to avoid deformation.
     console.print(Panel(f"Error: {message}", border_style=f"{COLORS['error']}", box=ROUNDED))
+
+
+def display_assistant_response(content: str, title: str = "Assistant"):
+    """
+    Display assistant response in a properly formatted panel.
+    Use this instead of manually creating panels to ensure consistent styling.
+    """
+    from rich.markdown import Markdown
+
+    if not content or not content.strip():
+        return
+
+    console.print()  # Ensure clean line before panel
+    console.print(Panel(
+        Markdown(content),
+        title=title,
+        title_align="left",
+        border_style=COLORS['secondary'],
+        box=ROUNDED,
+        padding=(0, 1)
+    ))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Diff Display (Git-style with line numbers)
@@ -490,25 +562,30 @@ def display_file_deletion(file_path: str, content: str, max_lines: int = 20):
         padding=(0, 1)
     ))
 
-def display_file_read(file_path: str, content: str, start_line: int = 1, max_lines: int = 50):
+def display_file_read(file_path: str, content: str, start_line: int = 1, max_lines: int = 50, verbose: bool = False):
     """
-    Display file contents with line numbers (like a code snippet)
+    Display file read notification.
+    By default shows only a compact summary. Use verbose=True to show content.
     """
     lines = content.splitlines()
     total_lines = len(lines)
-    display_lines = lines[:max_lines]
 
-    # Detect language from extension
-    ext = file_path.split(".")[-1] if "." in file_path else ""
-    lang_map = {
-        "py": "python", "js": "javascript", "ts": "typescript",
-        "jsx": "jsx", "tsx": "tsx", "json": "json", "md": "markdown",
-        "html": "html", "css": "css", "yaml": "yaml", "yml": "yaml",
-        "sh": "bash", "bash": "bash", "sql": "sql", "rs": "rust",
-        "go": "go", "java": "java", "c": "c", "cpp": "cpp", "h": "c",
-        "rb": "ruby", "php": "php", "swift": "swift", "kt": "kotlin"
-    }
-    language = lang_map.get(ext, "text")
+    # Calculate file size
+    size_bytes = len(content.encode('utf-8'))
+    if size_bytes < 1024:
+        size_str = f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        size_str = f"{size_bytes // 1024} KB"
+    else:
+        size_str = f"{size_bytes // (1024 * 1024)} MB"
+
+    # Compact display (default) - just show file info
+    if not verbose:
+        console.print(f"[{COLORS['muted']}]📄 Reading:[/] [bold]{file_path}[/bold] [{COLORS['muted']}]{total_lines} lines ({size_str})[/]")
+        return
+
+    # Verbose display - show content with line numbers
+    display_lines = lines[:max_lines]
 
     text = Text()
 

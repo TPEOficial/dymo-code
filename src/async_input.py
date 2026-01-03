@@ -225,17 +225,34 @@ class NonBlockingInput:
                                 sys.stdout.write(buffer)
                                 sys.stdout.flush()
                         elif "@" in buffer:
-                            # Path autocomplete
+                            # Path autocomplete with drill-down for directories
                             path_suggestions = get_path_suggestions(buffer)
                             if path_suggestions:
                                 # Find @ position and replace path part
                                 at_index = buffer.rfind("@")
-                                new_path = path_suggestions[0]["path"]
+                                selected = path_suggestions[0]
+                                new_path = selected["path"]
                                 buffer = buffer[:at_index + 1] + new_path
+
+                                # If it's a directory, keep drilling down
+                                # (get_path_suggestions will show contents on next Tab)
                                 self._clear_line()
                                 self._show_prompt()
                                 sys.stdout.write(buffer)
                                 sys.stdout.flush()
+
+                                # Show hint for directories with content
+                                if selected["is_dir"] and selected.get("file_count", 0) + selected.get("dir_count", 0) > 0:
+                                    meta = selected.get("meta", "")
+                                    if meta:
+                                        sys.stdout.write(f" [{meta}]")
+                                        sys.stdout.flush()
+                                        # Clear the hint after showing
+                                        time.sleep(0.5)
+                                        self._clear_line()
+                                        self._show_prompt()
+                                        sys.stdout.write(buffer)
+                                        sys.stdout.flush()
                         continue
 
                     # Special keys (arrows)

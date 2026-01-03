@@ -98,6 +98,7 @@ hiddenimports = [
     'src.utils',
     'src.utils.basics',
     'src.ignore_patterns',
+    'src.prompt_enhancer',
     # Cloudscraper bypass modules
     'src.utils.bypasses',
     'src.utils.bypasses.cloudscraper',

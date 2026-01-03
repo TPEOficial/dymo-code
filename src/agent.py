@@ -29,7 +29,8 @@ from .terminal import terminal_title
 from .ui import (
     console, display_tool_call, display_tool_result, display_executed_tool,
     display_code_execution_result, display_info, display_warning,
-    display_key_rotation_notice, display_model_fallback_notice, display_provider_exhausted_notice
+    display_key_rotation_notice, display_model_fallback_notice, display_provider_exhausted_notice,
+    display_assistant_response
 )
 from .logger import log_error, log_api_error, log_tool_error, log_debug
 from .history import history_manager
@@ -402,6 +403,20 @@ class Agent:
         """Save the current conversation state"""
         history_manager.update_conversation(self.messages)
 
+    def _filter_valid_tool_calls(self, tool_calls: List[Any]) -> List[Any]:
+        """
+        Filter out tool calls for unknown/invalid tools.
+        Some models (especially Llama) may hallucinate tool names like 'commentary'.
+        """
+        valid_calls = []
+        for tc in tool_calls:
+            tool_name = tc.name if hasattr(tc, 'name') else tc.get('name', '')
+            if tool_name in TOOLS:
+                valid_calls.append(tc)
+            else:
+                log_debug(f"Ignoring unknown tool call: {tool_name}")
+        return valid_calls
+
     def _parse_tool_calls_from_text(self, text: str) -> List[ToolCall]:
         """
         Parse tool calls that appear as text in the response.
@@ -668,8 +683,7 @@ class Agent:
         follow_up_response = ""
         pending_tool_calls = []
         has_content = False
-        live_display = None
-        chunk_count = 0 # Buffer: only update display every N chunks.
+        chunk_count = 0  # Buffer counter for streaming.
 
         # Stream with Live panel for smooth updates.
         for chunk in client.stream_chat(
@@ -680,32 +694,26 @@ class Agent:
             if chunk.content:
                 if not has_content:
                     has_content = True
-                    # Stop spinner and start Live display
+                    # Stop spinner when streaming starts
                     self._update_status("streaming", "")
-                    live_display = Live(
-                        Panel(Markdown(follow_up_response or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
-                        console=console,
-                        refresh_per_second=4,
-                        transient=True
-                    )
-                    live_display.start()
 
                 follow_up_response += chunk.content
                 chunk_count += 1
-                # Update the live panel only every 5 chunks to reduce re-renders.
-                if live_display and chunk_count % 5 == 0: live_display.update(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
 
             if chunk.tool_calls:
-                pending_tool_calls.extend(chunk.tool_calls)
+                # Filter out invalid/unknown tool calls
+                valid_calls = self._filter_valid_tool_calls(chunk.tool_calls)
+                pending_tool_calls.extend(valid_calls)
 
-        # Stop live display and show final panel.
-        if live_display: live_display.stop()
-        if has_content and follow_up_response: console.print(Panel(Markdown(follow_up_response), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
+        # Show final response using centralized display
+        if has_content and follow_up_response:
+            display_assistant_response(follow_up_response)
 
         # Check for tool calls in text response
         if not pending_tool_calls and follow_up_response:
             text_tool_calls = self._parse_tool_calls_from_text(follow_up_response)
-            if text_tool_calls: pending_tool_calls.extend(text_tool_calls)
+            if text_tool_calls:
+                pending_tool_calls.extend(text_tool_calls)
 
         # If the model wants to use more tools, process them (for multi-step tasks)
         if pending_tool_calls and allow_more_tools:
@@ -783,8 +791,7 @@ class Agent:
             # Get all tools including MCP tools.
             all_tools = get_all_tool_definitions()
             has_started_streaming = False
-            live_display = None
-            chunk_count = 0 # Buffer: only update display every N chunks.
+            chunk_count = 0  # Buffer counter for streaming.
 
             # Update status to generating.
             self._update_status("generating", "")
@@ -798,28 +805,16 @@ class Agent:
                 if chunk.content:
                     if not has_started_streaming:
                         has_started_streaming = True
-                        # Stop spinner before showing content
+                        # Stop spinner when streaming starts
                         self._update_status("streaming", "")
-                        # Start Live display for streaming
-                        live_display = Live(
-                            Panel(Markdown(response_text or "..."), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED),
-                            console=console,
-                            refresh_per_second=4,
-                            transient=True
-                        )
-                        live_display.start()
 
                     response_text += chunk.content
                     chunk_count += 1
-                    # Update the live panel only every 5 chunks to reduce re-renders
-                    if live_display and chunk_count % 5 == 0:
-                        live_display.update(
-                            Panel(Markdown(response_text), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED)
-                        )
 
-                # Collect tool calls
+                # Collect tool calls (filter out unknown tools)
                 if chunk.tool_calls:
-                    pending_tool_calls.extend(chunk.tool_calls)
+                    valid_calls = self._filter_valid_tool_calls(chunk.tool_calls)
+                    pending_tool_calls.extend(valid_calls)
 
                 # Collect executed tools (from Groq built-in tools like code_interpreter)
                 if chunk.executed_tools:
@@ -829,11 +824,10 @@ class Agent:
                 if chunk.reasoning:
                     log_debug(f"Model reasoning: {chunk.reasoning[:200]}...")
 
-            # Stop live display and show final panel
-            if live_display:
-                live_display.stop()
-            if has_started_streaming and response_text:
-                console.print(Panel(Markdown(response_text), title="Assistant", title_align="left", border_style=COLORS['secondary'], box=ROUNDED))
+            # Show final response using centralized display (only if we have content and no tool calls)
+            # If there are tool calls, the response will be shown after tool execution
+            if has_started_streaming and response_text and not pending_tool_calls:
+                display_assistant_response(response_text)
 
             # Display executed tools (code execution, web search, etc.)
             if executed_tools_list:
@@ -849,6 +843,7 @@ class Agent:
                 text_tool_calls = self._parse_tool_calls_from_text(response_text)
                 if text_tool_calls:
                     log_debug(f"Found {len(text_tool_calls)} tool call(s) in text response")
+                    # Already filtered by _parse_tool_calls_from_text
                     pending_tool_calls.extend(text_tool_calls)
 
             # Process tool calls if any

@@ -28,6 +28,12 @@ from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 
+# Import ignore patterns for filtering
+try:
+    from .ignore_patterns import is_path_component_ignored
+except ImportError:
+    def is_path_component_ignored(name): return False
+
 from .config import COLORS
 from .commands import Command, get_command_suggestions, CATEGORY_ICONS, COMMANDS
 
@@ -303,6 +309,10 @@ class PathCompleter(Completer):
             if entry.name.startswith(".") and not filter_name.startswith("."):
                 continue
 
+            # Skip files/folders matching .dmcodeignore patterns
+            if is_path_component_ignored(entry.name):
+                continue
+
             if not filter_name or entry.name.lower().startswith(filter_name):
                 matches.append(entry)
 
@@ -310,7 +320,7 @@ class PathCompleter(Completer):
         matches.sort(key=lambda e: (not e.is_dir(), e.name.lower()))
 
         # Generate completions
-        for entry in matches[:12]:
+        for entry in matches[:15]:
             is_dir = entry.is_dir()
             name = entry.name
 
@@ -318,7 +328,21 @@ class PathCompleter(Completer):
             if is_dir:
                 completion_path = prefix + name + "/"
                 icon = "📁"
-                meta = "directory"
+                # Count files inside directory
+                try:
+                    dir_contents = list(os.scandir(entry.path))
+                    file_count = sum(1 for e in dir_contents if e.is_file() and not e.name.startswith('.'))
+                    dir_count = sum(1 for e in dir_contents if e.is_dir() and not e.name.startswith('.'))
+                    if file_count > 0 and dir_count > 0:
+                        meta = f"{file_count} files, {dir_count} dirs"
+                    elif file_count > 0:
+                        meta = f"{file_count} files"
+                    elif dir_count > 0:
+                        meta = f"{dir_count} dirs"
+                    else:
+                        meta = "empty"
+                except (OSError, PermissionError):
+                    meta = "directory"
             else:
                 completion_path = prefix + name
                 ext = os.path.splitext(name)[1].lower()
@@ -422,21 +446,61 @@ def get_path_suggestions(text: str, base_path: str = None) -> List[dict]:
     for entry in entries:
         if entry.name.startswith(".") and not filter_name.startswith("."):
             continue
+
+        # Skip files/folders matching .dmcodeignore patterns
+        if is_path_component_ignored(entry.name):
+            continue
+
         if not filter_name or entry.name.lower().startswith(filter_name):
             is_dir = entry.is_dir()
-            matches.append({
+            match_info = {
                 "name": entry.name,
                 "path": prefix + entry.name + ("/" if is_dir else ""),
                 "is_dir": is_dir,
                 "icon": "📁" if is_dir else PathCompleter.FILE_ICONS.get(
                     os.path.splitext(entry.name)[1].lower(), "📄"
                 ),
-            })
+            }
+
+            # Add content info for directories
+            if is_dir:
+                try:
+                    dir_contents = list(os.scandir(entry.path))
+                    file_count = sum(1 for e in dir_contents if e.is_file() and not e.name.startswith('.'))
+                    dir_count = sum(1 for e in dir_contents if e.is_dir() and not e.name.startswith('.'))
+                    match_info["file_count"] = file_count
+                    match_info["dir_count"] = dir_count
+                    if file_count > 0 and dir_count > 0:
+                        match_info["meta"] = f"{file_count} files, {dir_count} dirs"
+                    elif file_count > 0:
+                        match_info["meta"] = f"{file_count} files"
+                    elif dir_count > 0:
+                        match_info["meta"] = f"{dir_count} dirs"
+                    else:
+                        match_info["meta"] = "empty"
+                except (OSError, PermissionError):
+                    match_info["file_count"] = 0
+                    match_info["dir_count"] = 0
+                    match_info["meta"] = "directory"
+            else:
+                # Get file size
+                try:
+                    size = entry.stat().st_size
+                    if size < 1024:
+                        match_info["meta"] = f"{size} B"
+                    elif size < 1024 * 1024:
+                        match_info["meta"] = f"{size // 1024} KB"
+                    else:
+                        match_info["meta"] = f"{size // (1024 * 1024)} MB"
+                except OSError:
+                    match_info["meta"] = "file"
+
+            matches.append(match_info)
 
     # Sort: directories first, then alphabetically
     matches.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
 
-    return matches[:12]
+    return matches[:15]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -795,9 +859,38 @@ class TerminalUI:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def print_submitted_input(self, user_input: str):
-        """Print the user's submitted input so it stays visible"""
-        # Don't print - prompt_toolkit already shows it
-        pass
+        """Print the user's submitted input, truncating if too long"""
+        if not user_input:
+            return
+
+        lines = user_input.split('\n')
+        total_lines = len(lines)
+        total_chars = len(user_input)
+
+        # Truncate long input (similar to Claude Code)
+        max_display_lines = 3
+        max_display_chars = 200
+
+        if total_lines > max_display_lines or total_chars > max_display_chars:
+            # Show truncated preview
+            if total_lines > 1:
+                # Multi-line: show first few lines
+                preview_lines = lines[:max_display_lines]
+                preview = '\n'.join(line[:80] + ('...' if len(line) > 80 else '') for line in preview_lines)
+                if total_lines > max_display_lines:
+                    truncation_info = f"... +{total_lines - max_display_lines} more lines"
+                else:
+                    truncation_info = f"... +{total_chars - len(preview)} chars"
+            else:
+                # Single long line
+                preview = user_input[:max_display_chars]
+                truncation_info = f"... +{total_chars - max_display_chars} chars"
+
+            self.console.print(f"[{COLORS['primary']}]❯[/] {preview}")
+            self.console.print(f"[{COLORS['muted']}]  ({truncation_info})[/]")
+        else:
+            # Short input - show as is
+            self.console.print(f"[{COLORS['primary']}]❯[/] {user_input}")
 
     def start_processing(self, status: str = "thinking", detail: str = ""):
         """Start the animated processing spinner"""

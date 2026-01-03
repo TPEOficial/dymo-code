@@ -904,11 +904,9 @@ def main():
             else:
                 # Get input from user using async input handler
                 user_input = async_input.get_input()
+                # No need to print - prompt_toolkit already shows it while typing
 
             if not user_input: continue
-
-            # Show the user's input so it stays visible in chat history
-            async_input.print_submitted_input(user_input)
 
             # Handle commands
             command_result = handle_command(user_input, agent, queue_manager, command_handler)
