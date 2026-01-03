@@ -83,6 +83,15 @@ def setup_windows() -> Tuple[bool, str]:
                 exe_path = get_executable_path()
                 bat_content = f'@echo off\n"{python_exe}" "{exe_path}" %*'
 
+        # Remove any exe in bin directory (should only have bat/cmd)
+        # This prevents conflicts where .exe takes priority over .bat/.cmd in PATHEXT
+        bin_exe = bin_dir / "dymo-code.exe"
+        if bin_exe.exists():
+            try:
+                bin_exe.unlink()
+            except Exception:
+                pass  # May be in use, will be cleaned up next time
+
         # Create batch file
         bat_path = bin_dir / "dymo-code.bat"
         bat_path.write_text(bat_content, encoding='utf-8')

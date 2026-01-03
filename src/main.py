@@ -801,8 +801,28 @@ def run_first_time_setup() -> str:
 # Main Loop
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _cleanup_bin_exe():
+    """Remove exe from bin directory if it exists (Windows only).
+    The bin directory should only have .bat/.cmd files that point to the main exe.
+    Having an exe in bin causes issues because .exe has priority in PATHEXT.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        app_data = Path(os.environ.get('LOCALAPPDATA', ''))
+        if app_data:
+            bin_exe = app_data / "Dymo-Code" / "bin" / "dymo-code.exe"
+            if bin_exe.exists():
+                bin_exe.unlink()
+    except Exception:
+        pass  # Silent fail
+
+
 def main():
     """Main entry point"""
+    # Cleanup old exe in bin directory (Windows PATH fix)
+    _cleanup_bin_exe()
+
     # Check for automatic updates before anything else
     # This runs silently and restarts if an update is available
     if perform_silent_auto_update():
