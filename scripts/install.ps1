@@ -1,27 +1,64 @@
-$InstallDir = "$env:LOCALAPPDATA\dymo-code"
-$OutputFile = "$InstallDir\dymo-code.exe"
-$GitHubUrl = "https://github.com/TPEOficial/dymo-code/releases/latest/download/dymo-code-windows-amd64.exe"
-$MirrorUrl = "https://raw.githubusercontent.com/TPEOficial/dymo-code/main/dist/dymo-code-windows-amd64.exe"
+$ErrorActionPreference = "Stop"
+$InstallDir = "$env:LOCALAPPDATA\Dymo-Code"
+$BinDir = "$InstallDir\bin"
+$OutputFile = "$BinDir\dymo-code.exe"
+$DownloadUrl = "https://github.com/TPEOficial/dymo-code/releases/latest/download/dymo-code-windows-amd64.exe"
 
-New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+Write-Host "Installing Dymo Code..." -ForegroundColor Cyan
+
+# Create directories
+New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+
+# Set TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-for ($i=1; $i -le 3; $i++) {
+# Download with retry
+$maxRetries = 3
+$success = $false
+
+for ($i = 1; $i -le $maxRetries; $i++) {
     try {
-        Invoke-WebRequest -Uri $GitHubUrl -OutFile $OutputFile
-        break
+        Write-Host "Downloading from GitHub (attempt $i/$maxRetries)..." -ForegroundColor Gray
+
+        # Use WebClient for better compatibility with redirects
+        $webClient = New-Object System.Net.WebClient
+        $webClient.Headers.Add("User-Agent", "Dymo-Code-Installer/1.0")
+        $webClient.DownloadFile($DownloadUrl, $OutputFile)
+
+        # Verify download
+        if (Test-Path $OutputFile) {
+            $fileSize = (Get-Item $OutputFile).Length
+            if ($fileSize -gt 1000000) {  # At least 1MB
+                $success = $true
+                Write-Host "Download complete ($([math]::Round($fileSize/1MB, 2)) MB)" -ForegroundColor Green
+                break
+            } else {
+                Write-Host "Downloaded file too small, retrying..." -ForegroundColor Yellow
+                Remove-Item $OutputFile -Force -ErrorAction SilentlyContinue
+            }
+        }
     } catch {
-        if ($i -eq 3) {
-            Invoke-WebRequest -Uri $MirrorUrl -OutFile $OutputFile
-        } else {
+        Write-Host "Attempt $i failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        if ($i -lt $maxRetries) {
             Start-Sleep -Seconds 2
         }
     }
 }
 
-$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($UserPath -notlike "*$InstallDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
+if (-not $success) {
+    Write-Host "Failed to download after $maxRetries attempts." -ForegroundColor Red
+    Write-Host "Please download manually from:" -ForegroundColor Yellow
+    Write-Host $DownloadUrl -ForegroundColor Cyan
+    exit 1
 }
 
-Write-Host "Installed successfully. Restart terminal and run: dymo-code"
+# Add to PATH
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($UserPath -notlike "*$BinDir*") {
+    [Environment]::SetEnvironmentVariable("Path", "$UserPath;$BinDir", "User")
+    Write-Host "Added to PATH" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "Installed successfully!" -ForegroundColor Green
+Write-Host "Restart your terminal and run: dymo-code" -ForegroundColor Cyan

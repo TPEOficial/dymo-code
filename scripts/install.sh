@@ -6,45 +6,90 @@ OUTPUT_FILE="${INSTALL_DIR}/dymo-code"
 OS=$(uname -s)
 ARCH=$(uname -m)
 
+echo "Installing Dymo Code..."
+
+# Detect OS and architecture
 case "$OS" in
     Linux)
         case "$ARCH" in
             x86_64) BINARY="dymo-code-linux-x86_64" ;;
-            aarch64) BINARY="dymo-code-linux-arm64" ;;
-            *) echo "Unsupported architecture"; exit 1 ;;
+            aarch64|arm64) BINARY="dymo-code-linux-arm64" ;;
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;
     Darwin)
         case "$ARCH" in
             arm64) BINARY="dymo-code-macos-arm64" ;;
             x86_64) BINARY="dymo-code-macos-x86_64" ;;
-            *) echo "Unsupported architecture"; exit 1 ;;
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;
-    *) echo "Unsupported OS"; exit 1 ;;
+    MINGW*|MSYS*|CYGWIN*)
+        BINARY="dymo-code-windows-amd64.exe"
+        ;;
+    *) echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
-GITHUB_URL="https://github.com/TPEOficial/dymo-code/releases/latest/download/${BINARY}"
-MIRROR_URL="https://raw.githubusercontent.com/TPEOficial/dymo-code/main/dist/${BINARY}"
+DOWNLOAD_URL="https://github.com/TPEOficial/dymo-code/releases/latest/download/${BINARY}"
 
+# Create install directory
 mkdir -p "$INSTALL_DIR"
 
-for i in 1 2 3; do
-    if curl -fsSL "$GITHUB_URL" -o "$OUTPUT_FILE"; then
-        break
-    elif [ "$i" -eq 3 ]; then
-        curl -fsSL "$MIRROR_URL" -o "$OUTPUT_FILE"
+# Download with retry
+max_retries=3
+success=false
+
+for i in $(seq 1 $max_retries); do
+    echo "Downloading from GitHub (attempt $i/$max_retries)..."
+
+    if curl -fsSL --user-agent "Dymo-Code-Installer/1.0" -o "$OUTPUT_FILE" "$DOWNLOAD_URL"; then
+        # Verify download (at least 1MB)
+        file_size=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "0")
+        if [ "$file_size" -gt 1000000 ]; then
+            success=true
+            echo "Download complete ($(echo "scale=2; $file_size/1048576" | bc 2>/dev/null || echo "$file_size bytes"))"
+            break
+        else
+            echo "Downloaded file too small, retrying..."
+            rm -f "$OUTPUT_FILE"
+        fi
     else
+        echo "Attempt $i failed"
+    fi
+
+    if [ "$i" -lt "$max_retries" ]; then
         sleep 2
     fi
 done
 
-chmod +x "$OUTPUT_FILE"
-
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-    echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> ~/.bashrc 2>/dev/null || true
-    echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> ~/.zshrc 2>/dev/null || true
-    export PATH="$PATH:$INSTALL_DIR"
+if [ "$success" = false ]; then
+    echo "Failed to download after $max_retries attempts."
+    echo "Please download manually from:"
+    echo "$DOWNLOAD_URL"
+    exit 1
 fi
 
-echo "Installed successfully. Run: dymo-code"
+# Make executable
+chmod +x "$OUTPUT_FILE"
+
+# Add to PATH in shell configs
+add_to_path() {
+    local shell_rc="$1"
+    if [ -f "$shell_rc" ]; then
+        if ! grep -q "$INSTALL_DIR" "$shell_rc" 2>/dev/null; then
+            echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$shell_rc"
+        fi
+    fi
+}
+
+add_to_path "$HOME/.bashrc"
+add_to_path "$HOME/.zshrc"
+add_to_path "$HOME/.profile"
+
+# Export for current session
+export PATH="$PATH:$INSTALL_DIR"
+
+echo ""
+echo "Installed successfully!"
+echo "Restart your terminal or run: source ~/.bashrc"
+echo "Then run: dymo-code"
