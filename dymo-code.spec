@@ -36,6 +36,8 @@ datas = [
     (str(project_root / 'static-api'), 'static-api'),
     # Include logo image for documentation
     (str(project_root / 'docs' / 'images' / 'logo.png'), 'docs/images'),
+    # Include default ignore patterns
+    (str(project_root / '.dmcodeignore'), '.'),
 ]
 
 # Add certifi certificates if available

@@ -4,6 +4,7 @@ Works similar to .gitignore - files/folders matching patterns are ignored by too
 """
 
 import os
+import sys
 import fnmatch
 from pathlib import Path
 from typing import List, Set, Optional
@@ -12,29 +13,48 @@ from typing import List, Set, Optional
 _ignore_patterns: Optional[List[str]] = None
 _ignore_patterns_file_mtime: Optional[float] = None
 _ignore_patterns_file_path: Optional[Path] = None
+_bundled_patterns: Optional[List[str]] = None
 
 IGNORE_FILE_NAME = ".dmcodeignore"
 
-# Default patterns to always ignore (even without .dmcodeignore file)
-DEFAULT_IGNORE_PATTERNS = [
-    "node_modules",
-    "__pycache__",
-    ".git",
-    ".venv",
-    "venv",
-    ".env",
-    "dist",
-    "build",
-    ".idea",
-    ".vscode",
-    "*.pyc",
-    "*.pyo",
-]
+
+def _get_bundled_base_path() -> Optional[Path]:
+    """Get the base path for bundled files (PyInstaller)"""
+    # Check if running from PyInstaller bundle
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS)
+    return None
 
 
-def _find_ignore_file(start_path: Optional[Path] = None) -> Optional[Path]:
+def _load_bundled_patterns() -> List[str]:
+    """Load patterns from bundled .dmcodeignore (inside the executable)"""
+    global _bundled_patterns
+
+    if _bundled_patterns is not None:
+        return _bundled_patterns
+
+    _bundled_patterns = []
+    bundled_path = _get_bundled_base_path()
+
+    if bundled_path:
+        ignore_file = bundled_path / IGNORE_FILE_NAME
+        if ignore_file.exists():
+            try:
+                with open(ignore_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        _bundled_patterns.append(line)
+            except Exception:
+                pass
+
+    return _bundled_patterns
+
+
+def _find_project_ignore_file(start_path: Optional[Path] = None) -> Optional[Path]:
     """
-    Find .dmcodeignore file by searching:
+    Find project-specific .dmcodeignore file by searching:
     1. In the start_path (if provided)
     2. In current working directory
     3. Walking up the directory tree from cwd
@@ -64,49 +84,49 @@ def _find_ignore_file(start_path: Optional[Path] = None) -> Optional[Path]:
 
 def _load_ignore_patterns(force_reload: bool = False, search_path: Optional[Path] = None) -> List[str]:
     """
-    Load patterns from .dmcodeignore file.
+    Load patterns from .dmcodeignore files.
+    Merges bundled patterns (from executable) with project-specific patterns.
     Caches the result and reloads if file was modified.
-    Falls back to default patterns if no file found.
     """
     global _ignore_patterns, _ignore_patterns_file_mtime, _ignore_patterns_file_path
 
-    ignore_file = _find_ignore_file(search_path)
+    project_ignore_file = _find_project_ignore_file(search_path)
 
-    # Check if we need to reload
+    # Check if we need to reload project patterns
     if not force_reload and _ignore_patterns is not None:
-        if ignore_file:
+        if project_ignore_file:
             # Check if same file and not modified
-            if ignore_file == _ignore_patterns_file_path:
-                current_mtime = ignore_file.stat().st_mtime
+            if project_ignore_file == _ignore_patterns_file_path:
+                current_mtime = project_ignore_file.stat().st_mtime
                 if current_mtime == _ignore_patterns_file_mtime:
                     return _ignore_patterns
         elif _ignore_patterns_file_path is None:
-            # No file before and still no file - return cached (defaults)
+            # No file before and still no file - return cached
             return _ignore_patterns
 
-    # Load patterns from file
-    patterns = []
+    # Start with bundled patterns (from inside the executable)
+    patterns = _load_bundled_patterns().copy()
 
-    if ignore_file and ignore_file.exists():
+    # Add project-specific patterns if found
+    if project_ignore_file and project_ignore_file.exists():
         try:
-            with open(ignore_file, "r", encoding="utf-8") as f:
+            with open(project_ignore_file, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     # Skip empty lines and comments
                     if not line or line.startswith("#"):
                         continue
-                    patterns.append(line)
-            _ignore_patterns_file_mtime = ignore_file.stat().st_mtime
-            _ignore_patterns_file_path = ignore_file
+                    # Avoid duplicates
+                    if line not in patterns:
+                        patterns.append(line)
+            _ignore_patterns_file_mtime = project_ignore_file.stat().st_mtime
+            _ignore_patterns_file_path = project_ignore_file
         except Exception:
             _ignore_patterns_file_mtime = None
             _ignore_patterns_file_path = None
-            patterns = DEFAULT_IGNORE_PATTERNS.copy()
     else:
-        # No .dmcodeignore found, use defaults
         _ignore_patterns_file_mtime = None
         _ignore_patterns_file_path = None
-        patterns = DEFAULT_IGNORE_PATTERNS.copy()
 
     _ignore_patterns = patterns
     return patterns
