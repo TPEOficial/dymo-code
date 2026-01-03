@@ -100,6 +100,7 @@ $ python run.py
 | Command Permission System                     | Active              |   ✅   |
 | Advanced History Management System            | Active              |   ✅   |
 | Automatic Prompt Improvement System           | Active              |   ✅   |
+| Custom Commands System                        | In development      |   ⚠️   |
 
 <details>
   <summary>Other features</summary>
@@ -189,6 +190,13 @@ And coming soon...
 
   In addition, you can also disable the context-based recommendation system so that it does not recommend prompts based on the content of the conversation, allowing you to save a few more tokens by using the `/suggestions off` command.
 </details>
+
+<details>
+  <summary>How do I enter Shell Mode?</summary>
+  
+  To enter Shell Mode, simply type "!" mark and you'll be in terminal mode.
+</details>
+
 
 #### Author
  - FJRG007
