@@ -1485,6 +1485,78 @@ class CommandHandler:
                 display_error("Multi-agent system not available.")
             return True, None
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # Project Init Command
+        # ═══════════════════════════════════════════════════════════════════════
+
+        elif name == "init":
+            from .project_init import initialize_project
+            success, message = initialize_project()
+            if success:
+                display_success(message)
+            else:
+                display_error(message)
+            return True, None
+
+        elif name == "suggestions":
+            from .prompt_suggestions import prompt_suggester, save_suggestion_settings
+
+            args_lower = args.strip().lower() if args else ""
+
+            if args_lower in ("on", "enable", "true", "1"):
+                prompt_suggester.enabled = True
+                save_suggestion_settings()
+                display_success("Prompt suggestions enabled")
+                console.print(f"[{COLORS['muted']}]Press Tab to accept suggestions, arrows to cycle[/]")
+
+            elif args_lower in ("off", "disable", "false", "0"):
+                prompt_suggester.enabled = False
+                save_suggestion_settings()
+                display_success("Prompt suggestions disabled")
+
+            else:
+                # Toggle or show status
+                if not args_lower:
+                    status = "enabled" if prompt_suggester.enabled else "disabled"
+                    status_color = COLORS['success'] if prompt_suggester.enabled else COLORS['muted']
+
+                    console.print(f"\n[bold {COLORS['secondary']}]Prompt Suggestions[/]\n")
+                    console.print(f"  Status: [{status_color}]{status}[/]")
+                    console.print(f"\n[{COLORS['muted']}]When enabled, ghost text appears showing suggested prompts.[/]")
+                    console.print(f"[{COLORS['muted']}]Press Tab to accept, or ←/→ arrows to cycle through options.[/]")
+                    console.print(f"\n[{COLORS['muted']}]Usage: /suggestions on|off[/]\n")
+                else:
+                    display_error("Usage: /suggestions [on|off]")
+
+            return True, None
+
+        elif name == "enhance":
+            from .prompt_enhancer import prompt_enhancer
+
+            args_lower = args.strip().lower() if args else ""
+
+            if args_lower in ("on", "enable", "true", "1"):
+                prompt_enhancer.enabled = True
+                display_success("Automatic prompt enhancement enabled")
+                console.print(f"[{COLORS['muted']}]Complex prompts will be improved before sending to AI[/]")
+
+            elif args_lower in ("off", "disable", "false", "0"):
+                prompt_enhancer.enabled = False
+                display_success("Automatic prompt enhancement disabled")
+
+            else:
+                # Show status
+                status = "enabled" if prompt_enhancer.enabled else "disabled"
+                status_color = COLORS['success'] if prompt_enhancer.enabled else COLORS['muted']
+
+                console.print(f"\n[bold {COLORS['secondary']}]Automatic Prompt Enhancement[/]\n")
+                console.print(f"  Status: [{status_color}]{status}[/]")
+                console.print(f"\n[{COLORS['muted']}]When enabled, complex prompts are automatically[/]")
+                console.print(f"[{COLORS['muted']}]improved for clarity before sending to the AI.[/]")
+                console.print(f"\n[{COLORS['muted']}]Usage: /enhance on|off[/]\n")
+
+            return True, None
+
         # Unknown command - try to suggest similar commands
         from .commands import get_similar_commands
 

@@ -448,6 +448,35 @@ COMMANDS: Dict[str, Command] = {
         arg_hint="action"
     ),
 
+    # Project Init Command
+    "init": Command(
+        name="init",
+        description="Initialize .dmcode folder with AGENTS.md for AI agents",
+        category=CommandCategory.SYSTEM,
+        usage="/init",
+        aliases=["initialize"]
+    ),
+
+    # Prompt Suggestions
+    "suggestions": Command(
+        name="suggestions",
+        description="Toggle prompt suggestions (ghost text)",
+        category=CommandCategory.SYSTEM,
+        usage="/suggestions [on|off]",
+        has_args=True,
+        arg_hint="on|off"
+    ),
+
+    # Prompt Enhancement
+    "enhance": Command(
+        name="enhance",
+        description="Toggle automatic prompt improvement before sending",
+        category=CommandCategory.SYSTEM,
+        usage="/enhance [on|off]",
+        has_args=True,
+        arg_hint="on|off"
+    ),
+
     # Multi-Agent Commands
     "agents": Command(
         name="agents",

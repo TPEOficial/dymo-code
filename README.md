@@ -96,7 +96,6 @@ $ python run.py
 | Jailbreak Mode                                | In development      |   ⚠️   |
 | MCP Support                                   | In BETA Phase       |   ⚠️   |
 | Multi-Key Pool System                         | Active              |   ✅   |
-| Theme System                                  | Active              |   ✅   |
 | Search engine with bypass                     | Active              |   ✅   |
 | Command Permission System                     | Active              |   ✅   |
 | Advanced History Management System            | Active              |   ✅   |
@@ -112,6 +111,9 @@ $ python run.py
 | Automatic API Key change when credits run out | Active              |   ✅   |
 | Task Management System                        | Active              |   ✅   |
 | Intelligent Self-Repair System                | Active              |   ✅   |
+| Context-based Prompt Recommendation System    | Active              |   ✅   |
+| Multi-Theme System                            | Active              |   ✅   |
+| Shell Mode                                    | Active              |   ✅   |
 
 </details>
 
@@ -172,6 +174,20 @@ And coming soon...
   <summary>What is the Intelligent Self-Repair System?</summary>
   
   The Intelligent Self-Repair System manages and controls errors that occur during the use of Dymo Code, and attempts to handle them using tools and AI so that the process and assigned tasks can continue without having to stop execution.
+</details>
+
+<details>
+  <summary>What is the Context-based Prompt Recommendation System?</summary>
+  
+  The Context-based Prompt Recommendation System generates prompts based on the context of the current conversation to help you continue the conversation more easily.
+</details>
+
+<details>
+  <summary>How can I save on token consumption?</summary>
+  
+  To save tokens, you can disable the automatic suggestion improvement system so that suggestions are not automatically improved using the command `/enhance off`.
+
+  In addition, you can also disable the context-based recommendation system so that it does not recommend prompts based on the content of the conversation, allowing you to save a few more tokens by using the `/suggestions off` command.
 </details>
 
 #### Author

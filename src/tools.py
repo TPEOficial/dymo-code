@@ -1091,7 +1091,69 @@ def _validate_tool_definition(tool: Dict[str, Any]) -> bool:
     if not name or not isinstance(name, str) or not name.strip():
         return False
 
+    # Ensure name doesn't have invalid prefixes that cause API errors
+    if "/" in name or "." in name:
+        return False
+
+    # Ensure description exists
+    if not func.get("description"):
+        return False
+
     return True
+
+
+def _sanitize_tool_definition(tool: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Sanitize and fix tool definition to ensure it's valid"""
+    if not isinstance(tool, dict):
+        return None
+
+    if tool.get("type") != "function":
+        return None
+
+    func = tool.get("function")
+    if not isinstance(func, dict):
+        return None
+
+    name = func.get("name", "")
+    if not name or not isinstance(name, str):
+        return None
+
+    # Strip prefixes from name
+    prefixes_to_strip = [
+        "repo_browser.", "repo_browser/",
+        "functions.", "functions/",
+        "tools.", "tools/",
+        "file_ops.", "file_ops/",
+        "system.", "system/"
+    ]
+    for prefix in prefixes_to_strip:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+
+    name = name.strip()
+    if not name:
+        return None
+
+    # Ensure description exists
+    description = func.get("description", "")
+    if not description:
+        description = f"Execute {name} tool"
+
+    # Build sanitized tool
+    sanitized = {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description
+        }
+    }
+
+    # Copy parameters if they exist
+    if "parameters" in func:
+        sanitized["function"]["parameters"] = func["parameters"]
+
+    return sanitized
 
 
 def get_all_tool_definitions() -> List[Dict[str, Any]]:
@@ -1111,7 +1173,17 @@ def get_all_tool_definitions() -> List[Dict[str, Any]]:
         all_tools.extend(mcp_tools)
     except Exception: pass
 
-    # Filter out invalid tool definitions to prevent API errors
-    valid_tools = [t for t in all_tools if _validate_tool_definition(t)]
+    # Sanitize and filter out invalid tool definitions to prevent API errors
+    valid_tools = []
+    seen_names = set()  # Avoid duplicate tools
+
+    for t in all_tools:
+        # First try to sanitize the tool
+        sanitized = _sanitize_tool_definition(t)
+        if sanitized and _validate_tool_definition(sanitized):
+            tool_name = sanitized["function"]["name"]
+            if tool_name not in seen_names:
+                seen_names.add(tool_name)
+                valid_tools.append(sanitized)
 
     return valid_tools

@@ -19,6 +19,7 @@ from rich.text import Text
 from .config import COLORS
 from .commands import get_command_suggestions, COMMANDS, Command
 from .terminal_ui import get_path_suggestions
+from .prompt_suggestions import prompt_suggester
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Windows-specific imports
@@ -475,6 +476,104 @@ class ThreadedInputHandler:
         self.stop_event = threading.Event()
         self.reader_thread: Optional[threading.Thread] = None
 
+        # Ghost suggestions
+        self.ghost_suggestion: str = ""
+        self.conversation_messages: List = []
+        self.last_tool: Optional[str] = None
+
+        # Shell mode
+        self.shell_mode: bool = False
+
+    def _enter_shell_mode(self):
+        """Enter shell mode"""
+        self.shell_mode = True
+        sys.stdout.write('\r' + ' ' * 120 + '\r')
+        # Show shell mode indicator
+        sys.stdout.write('\033[93m[SHELL]\033[0m \033[90mEsc/Backspace to exit\033[0m\n')
+        sys.stdout.write(f'\033[93m!\033[0m ')  # Yellow ! prompt
+        sys.stdout.flush()
+
+    def _exit_shell_mode(self):
+        """Exit shell mode"""
+        self.shell_mode = False
+        sys.stdout.write('\r' + ' ' * 120 + '\r')
+        sys.stdout.write('\033[90m[SHELL EXIT]\033[0m\n')
+        sys.stdout.write('❯ ')
+        # Show ghost suggestion if available
+        if self.ghost_suggestion and prompt_suggester.enabled:
+            sys.stdout.write(f'\033[90m{self.ghost_suggestion}\033[0m')
+            sys.stdout.write('\r❯ ')
+        sys.stdout.flush()
+
+    def _execute_shell_command(self, command: str):
+        """Execute a shell command directly"""
+        if not command.strip():
+            return
+
+        self.console.print(f"\n[{COLORS['muted']}]$ {command}[/]")
+
+        try:
+            import subprocess
+            # Execute command
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+                timeout=60
+            )
+
+            # Print output
+            if result.stdout:
+                self.console.print(result.stdout.rstrip())
+            if result.stderr:
+                self.console.print(f"[red]{result.stderr.rstrip()}[/]")
+            if result.returncode != 0:
+                self.console.print(f"[{COLORS['muted']}]Exit code: {result.returncode}[/]")
+
+        except subprocess.TimeoutExpired:
+            self.console.print(f"[{COLORS['error']}]Command timed out after 60s[/]")
+        except Exception as e:
+            self.console.print(f"[{COLORS['error']}]Error: {e}[/]")
+
+        self.console.print()
+
+    def set_context(self, messages: List, last_tool: str = None):
+        """Set conversation context for ghost suggestions"""
+        self.conversation_messages = messages
+        self.last_tool = last_tool
+        if prompt_suggester.enabled:
+            self.ghost_suggestion = prompt_suggester.get_suggestion(messages, last_tool) or ""
+        else:
+            self.ghost_suggestion = ""
+
+    def print_submitted_input(self, text: str):
+        """Print the submitted input (for queued messages)"""
+        self.console.print(f"[{COLORS['primary']}]❯[/] {text}")
+
+    def set_suggestion_context(self, response_text: str):
+        """
+        Update suggestion context based on AI response.
+        This is called after each AI response to update ghost suggestions.
+        """
+        if prompt_suggester.enabled:
+            # Create a minimal message structure for context
+            messages = [{"role": "assistant", "content": response_text}]
+            self.ghost_suggestion = prompt_suggester.get_suggestion(messages, self.last_tool) or ""
+
+    def update_status(self, status: str, detail: str = ""):
+        """Update processing status (for spinner)"""
+        pass  # Status is handled by terminal_title in main.py
+
+    def start_processing(self, status: str = "thinking"):
+        """Start processing indicator"""
+        self.set_processing(True)
+
+    def stop_processing(self):
+        """Stop processing indicator"""
+        self.set_processing(False)
+
     def start(self):
         """Start the background reader thread"""
         self.stop_event.clear()
@@ -539,7 +638,7 @@ class ThreadedInputHandler:
             self._unix_reader()
 
     def _windows_reader(self):
-        """Windows character-by-character reader"""
+        """Windows character-by-character reader with shell mode support"""
         buffer = ""
 
         while not self.stop_event.is_set():
@@ -550,6 +649,15 @@ class ThreadedInputHandler:
                     if char == '\r':  # Enter
                         result = buffer.strip()
                         buffer = ""
+
+                        # Shell mode - execute command directly
+                        if self.shell_mode:
+                            if result:
+                                self._execute_shell_command(result)
+                            # Stay in shell mode, show prompt again
+                            sys.stdout.write(f'\033[93m!\033[0m ')
+                            sys.stdout.flush()
+                            continue
 
                         if result:
                             with self.lock:
@@ -568,16 +676,80 @@ class ThreadedInputHandler:
                             buffer = buffer[:-1]
                             sys.stdout.write('\b \b')
                             sys.stdout.flush()
+                        elif self.shell_mode:
+                            # Exit shell mode when backspacing with empty buffer
+                            self._exit_shell_mode()
 
                     elif char == '\x03':  # Ctrl+C
-                        with self.lock:
-                            self.pending_input = "/exit"
-                            self.input_ready.set()
+                        if self.shell_mode:
+                            self._exit_shell_mode()
+                            buffer = ""
+                        else:
+                            with self.lock:
+                                self.pending_input = "/exit"
+                                self.input_ready.set()
 
                     elif char == '\x1b':  # Escape
                         buffer = ""
-                        sys.stdout.write('\r' + ' ' * 80 + '\r❯ ')
-                        sys.stdout.flush()
+                        if self.shell_mode:
+                            # Exit shell mode
+                            self._exit_shell_mode()
+                        else:
+                            # Clear line and show prompt with ghost suggestion
+                            sys.stdout.write('\r' + ' ' * 120 + '\r❯ ')
+                            if self.ghost_suggestion and prompt_suggester.enabled:
+                                # Show ghost in dim color (ANSI escape)
+                                sys.stdout.write(f'\033[90m{self.ghost_suggestion}\033[0m')
+                                sys.stdout.write('\r❯ ')  # Move cursor back
+                            sys.stdout.flush()
+
+                    elif char == '!' and not buffer and not self.shell_mode:
+                        # Enter shell mode
+                        self._enter_shell_mode()
+
+                    elif char == '\t':  # Tab - accept ghost suggestion
+                        if self.shell_mode:
+                            # In shell mode, tab does nothing special
+                            continue
+                        if not buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                            # Accept ghost suggestion and submit
+                            result = self.ghost_suggestion
+                            with self.lock:
+                                if self.is_processing:
+                                    self.message_queue.append(QueuedMessage(content=result))
+                                    size = len(self.message_queue)
+                                    sys.stdout.write(f"\n📥 En cola ({size})\n")
+                                    sys.stdout.flush()
+                                else:
+                                    self.pending_input = result
+                                    self.input_ready.set()
+                            # Clear and show what was submitted
+                            sys.stdout.write('\r' + ' ' * 120 + '\r')
+                            sys.stdout.write(f'❯ {result}\n')
+                            sys.stdout.flush()
+
+                    elif char == '\x00' or char == '\xe0':  # Special keys
+                        special = msvcrt.getwch()
+                        # Right arrow - cycle ghost suggestions
+                        if special == 'M' and not buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                            next_sug = prompt_suggester.get_next_suggestion()
+                            if next_sug:
+                                self.ghost_suggestion = next_sug
+                                sys.stdout.write('\r' + ' ' * 120 + '\r❯ ')
+                                sys.stdout.write(f'\033[90m{self.ghost_suggestion}\033[0m')
+                                sys.stdout.write('\r❯ ')
+                                sys.stdout.flush()
+                        # Left arrow - cycle backwards
+                        elif special == 'K' and not buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                            all_sug = prompt_suggester.get_all_suggestions()
+                            if all_sug:
+                                current_idx = all_sug.index(self.ghost_suggestion) if self.ghost_suggestion in all_sug else 0
+                                prev_idx = (current_idx - 1) % len(all_sug)
+                                self.ghost_suggestion = all_sug[prev_idx]
+                                sys.stdout.write('\r' + ' ' * 120 + '\r❯ ')
+                                sys.stdout.write(f'\033[90m{self.ghost_suggestion}\033[0m')
+                                sys.stdout.write('\r❯ ')
+                                sys.stdout.flush()
 
                     elif char.isprintable():
                         buffer += char
@@ -631,8 +803,15 @@ class ThreadedInputHandler:
 
     def get_input(self) -> str:
         """Get input - waits for user to press Enter"""
-        # Show prompt
-        self.console.print(f"[{COLORS['primary']}]❯[/] ", end="")
+        # Show prompt with ghost suggestion
+        prompt_text = Text()
+        prompt_text.append("❯ ", style=f"bold {COLORS['primary']}")
+
+        # Add ghost suggestion if available and enabled
+        if self.ghost_suggestion and prompt_suggester.enabled:
+            prompt_text.append(self.ghost_suggestion, style=f"dim {COLORS['muted']}")
+
+        self.console.print(prompt_text, end="")
         sys.stdout.flush()
 
         # Clear any previous input state

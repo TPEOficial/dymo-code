@@ -21,6 +21,7 @@ from .commands import (
 )
 from .config import COLORS
 from .terminal_ui import get_path_suggestions
+from .prompt_suggestions import prompt_suggester
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Console Setup
@@ -165,6 +166,9 @@ class InteractiveInput:
         self.suggestion_type = "command"  # "command" or "path"
         self.history: List[str] = []
         self.history_index = -1
+        # Prompt suggestion (ghost text)
+        self.ghost_suggestion: str = ""
+        self.conversation_messages: List = []  # Set externally for context
 
     def _clear_line(self):
         """Clear the current line"""
@@ -172,7 +176,7 @@ class InteractiveInput:
         sys.stdout.flush()
 
     def _render_input_line(self):
-        """Render the current input line with prompt"""
+        """Render the current input line with prompt and ghost suggestion"""
         self._clear_line()
 
         # Build prompt
@@ -182,6 +186,10 @@ class InteractiveInput:
         # Build input text with cursor
         input_text = Text()
         input_text.append(self.buffer, style="white")
+
+        # Add ghost suggestion if buffer is empty and we have a suggestion
+        if not self.buffer and self.ghost_suggestion and prompt_suggester.enabled:
+            input_text.append(self.ghost_suggestion, style=f"dim {COLORS['muted']}")
 
         # Render to console without newline
         console.print(prompt, end="")
@@ -292,6 +300,15 @@ class InteractiveInput:
 
             self.cursor_pos = len(self.buffer)
 
+    def set_context(self, messages: List, last_tool: str = None):
+        """Set conversation context for prompt suggestions"""
+        self.conversation_messages = messages
+        # Generate ghost suggestion based on context
+        if prompt_suggester.enabled:
+            self.ghost_suggestion = prompt_suggester.get_suggestion(messages, last_tool) or ""
+        else:
+            self.ghost_suggestion = ""
+
     def get_input(self, prompt_prefix: str = "") -> str:
         """
         Get input from user with interactive command suggestions.
@@ -302,7 +319,7 @@ class InteractiveInput:
         self.showing_suggestions = False
         self.selected_index = 0
 
-        # Initial render
+        # Initial render (will show ghost suggestion if available)
         self._render_input_line()
 
         while True:
@@ -334,12 +351,22 @@ class InteractiveInput:
                     self._clear_line()
                     self._render_input_line()
 
-                # Tab - complete suggestion
+                # Tab - complete suggestion or accept ghost suggestion
                 elif char == '\t':
                     if self.showing_suggestions:
+                        # Complete command/path suggestion
                         self._complete_selected()
                         self._clear_line()
                         self._render_input_line()
+                    elif not self.buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                        # Accept ghost suggestion and submit immediately
+                        self.buffer = self.ghost_suggestion
+                        console.print()  # New line
+                        result = self.buffer.strip()
+                        if result:
+                            self.history.append(result)
+                            self.history_index = len(self.history)
+                        return result
 
                 # Backspace
                 elif char == '\x08':
@@ -383,6 +410,28 @@ class InteractiveInput:
                             self.buffer = self.history[self.history_index]
                             self.cursor_pos = len(self.buffer)
                             self._update_suggestions()
+                            self._clear_line()
+                            self._render_input_line()
+
+                    # Right arrow - cycle to next ghost suggestion when buffer empty
+                    elif special == 'M':
+                        if not self.buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                            # Get next suggestion
+                            next_suggestion = prompt_suggester.get_next_suggestion()
+                            if next_suggestion:
+                                self.ghost_suggestion = next_suggestion
+                            self._clear_line()
+                            self._render_input_line()
+
+                    # Left arrow - cycle to previous (wraps around)
+                    elif special == 'K':
+                        if not self.buffer and self.ghost_suggestion and prompt_suggester.enabled:
+                            # Cycle backwards through suggestions
+                            all_suggestions = prompt_suggester.get_all_suggestions()
+                            if all_suggestions:
+                                current_idx = all_suggestions.index(self.ghost_suggestion) if self.ghost_suggestion in all_suggestions else 0
+                                prev_idx = (current_idx - 1) % len(all_suggestions)
+                                self.ghost_suggestion = all_suggestions[prev_idx]
                             self._clear_line()
                             self._render_input_line()
 
@@ -435,15 +484,31 @@ def simple_input_with_suggestions() -> str:
 # Exported Function
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_user_input() -> str:
+# Global handler instance for context persistence
+_input_handler: Optional[InteractiveInput] = None
+
+
+def get_user_input(messages: List = None, last_tool: str = None) -> str:
     """
-    Get user input with command suggestions.
+    Get user input with command suggestions and ghost prompts.
     Uses interactive input on Windows, falls back to simple input elsewhere.
+
+    Args:
+        messages: Conversation messages for context-aware suggestions
+        last_tool: Name of last tool executed for better suggestions
     """
+    global _input_handler
+
     if sys.platform == "win32":
         try:
-            handler = InteractiveInput()
-            return handler.get_input()
+            if _input_handler is None:
+                _input_handler = InteractiveInput()
+
+            # Set context for ghost suggestions
+            if messages is not None:
+                _input_handler.set_context(messages, last_tool)
+
+            return _input_handler.get_input()
         except Exception:
             return simple_input_with_suggestions()
     else:

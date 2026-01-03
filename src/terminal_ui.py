@@ -717,7 +717,7 @@ smart_suggester = SmartSuggester()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_key_bindings():
-    """Create custom key bindings for Tab to accept suggestion"""
+    """Create custom key bindings for Tab to accept suggestion and ! for shell mode"""
     kb = KeyBindings()
 
     @kb.add(Keys.Tab)
@@ -740,6 +740,17 @@ def create_key_bindings():
             buff.insert_text(buff.suggestion.text)
         else:
             buff.cursor_right()
+
+    @kb.add('!')
+    def enter_shell_mode(event):
+        """Enter shell mode when ! is pressed on empty buffer"""
+        buff = event.app.current_buffer
+        if not buff.text:
+            # Exit prompt with special marker to trigger shell mode
+            event.app.exit(result='!SHELL_MODE!')
+        else:
+            # Normal ! character
+            buff.insert_text('!')
 
     return kb
 
@@ -778,6 +789,85 @@ class TerminalUI:
         # ESC tracking for double-ESC exit
         self._last_esc_time: float = 0
         self._esc_timeout: float = 1.0
+
+        # Shell mode
+        self.shell_mode: bool = False
+        self._shell_session: Optional[PromptSession] = None
+
+    def _execute_shell_command(self, command: str) -> bool:
+        """Execute a shell command directly. Returns True if command was executed."""
+        if not command.strip():
+            return False
+
+        import subprocess
+
+        self.console.print(f"[{COLORS['muted']}]$ {command}[/]")
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+                timeout=120
+            )
+
+            if result.stdout:
+                self.console.print(result.stdout.rstrip())
+            if result.stderr:
+                self.console.print(f"[red]{result.stderr.rstrip()}[/]")
+            if result.returncode != 0:
+                self.console.print(f"[{COLORS['muted']}]Exit code: {result.returncode}[/]")
+
+        except subprocess.TimeoutExpired:
+            self.console.print(f"[{COLORS['error']}]Command timed out after 120s[/]")
+        except Exception as e:
+            self.console.print(f"[{COLORS['error']}]Error: {e}[/]")
+
+        return True
+
+    def _get_shell_session(self) -> PromptSession:
+        """Get or create shell mode session"""
+        if self._shell_session is None:
+            self._shell_session = PromptSession(
+                style=Style.from_dict({
+                    'prompt': '#ffcc00 bold',  # Yellow for shell mode
+                    'shell-indicator': '#888888',
+                }),
+            )
+        return self._shell_session
+
+    def _run_shell_mode(self):
+        """Run interactive shell mode until user exits"""
+        self.shell_mode = True
+        self.console.print(f"[yellow][SHELL MODE][/] [dim]Esc or empty input to exit[/]")
+
+        shell_session = self._get_shell_session()
+
+        while self.shell_mode:
+            try:
+                # Shell prompt
+                cmd = shell_session.prompt([('class:prompt', '! ')])
+
+                if not cmd or not cmd.strip():
+                    # Empty input exits shell mode
+                    self.shell_mode = False
+                    self.console.print(f"[dim][SHELL EXIT][/]")
+                    break
+
+                self._execute_shell_command(cmd.strip())
+
+            except KeyboardInterrupt:
+                # Ctrl+C exits shell mode
+                self.shell_mode = False
+                self.console.print(f"\n[dim][SHELL EXIT][/]")
+                break
+            except EOFError:
+                # Ctrl+D exits shell mode
+                self.shell_mode = False
+                self.console.print(f"[dim][SHELL EXIT][/]")
+                break
 
     @property
     def session(self) -> PromptSession:
@@ -1005,9 +1095,30 @@ class TerminalUI:
             result = self.session.prompt(prompt_parts)
 
             if result:
+                result = result.strip()
+
+                # Check for shell mode trigger (from key binding)
+                if result == "!SHELL_MODE!":
+                    # Enter interactive shell mode immediately
+                    self._run_shell_mode()
+                    return ""  # Return empty to continue main loop
+
+                # Check for shell mode trigger (typed with Enter)
+                if result == "!":
+                    # Enter interactive shell mode
+                    self._run_shell_mode()
+                    return ""  # Return empty to continue main loop
+
+                elif result.startswith("!"):
+                    # Execute single shell command
+                    cmd = result[1:].strip()
+                    if cmd:
+                        self._execute_shell_command(cmd)
+                    return ""  # Return empty to continue main loop
+
                 self.history.append(result)
 
-            return result.strip() if result else ""
+            return result if result else ""
 
         except KeyboardInterrupt:
             # Ctrl+C pressed

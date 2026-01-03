@@ -396,8 +396,19 @@ For 3+ independent subtasks, use spawn_agents to parallelize work.
 """
 
 def get_system_prompt() -> str:
-    """Generate system prompt with current environment info"""
-    return SYSTEM_PROMPT.format(
+    """Generate system prompt with current environment info and AGENTS.md content"""
+    base_prompt = SYSTEM_PROMPT.format(
         os_info=f"{platform.system()} {platform.release()}",
         cwd=os.getcwd()
     )
+
+    # Try to include AGENTS.md content if it exists
+    try:
+        from .project_init import get_agents_md_content
+        agents_md = get_agents_md_content()
+        if agents_md:
+            base_prompt += f"\n\n## PROJECT CONTEXT (from AGENTS.md)\n{agents_md}"
+    except ImportError:
+        pass
+
+    return base_prompt
